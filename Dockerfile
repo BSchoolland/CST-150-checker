@@ -3,7 +3,7 @@ FROM ubuntu:22.04
 # Prevent interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install base dependencies
+# Install base dependencies (excluding novnc - we'll install latest from GitHub)
 RUN apt-get update && apt-get install -y \
     wget \
     curl \
@@ -11,12 +11,17 @@ RUN apt-get update && apt-get install -y \
     software-properties-common \
     xvfb \
     x11vnc \
-    novnc \
     websockify \
     unzip \
     supervisor \
     ca-certificates \
+    git \
+    openbox \
     && rm -rf /var/lib/apt/lists/*
+
+# Install latest noVNC from GitHub (apt version is outdated 1.2.0)
+RUN git clone --depth 1 --branch v1.6.0 https://github.com/novnc/noVNC.git /usr/share/novnc && \
+    ln -s /usr/share/novnc/vnc.html /usr/share/novnc/index.html
 
 # Install Bun
 RUN curl -fsSL https://bun.sh/install | bash
@@ -77,6 +82,7 @@ ENV DISPLAY=:99
 COPY package.json /app/
 COPY src/ /app/src/
 COPY public/ /app/public/
+COPY openbox-rc.xml /app/openbox-rc.xml
 
 WORKDIR /app
 

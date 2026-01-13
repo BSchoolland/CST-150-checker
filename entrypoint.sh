@@ -23,8 +23,13 @@ rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
 
 # Start Xvfb (virtual framebuffer)
 echo "Starting Xvfb on display :99..."
-Xvfb :99 -screen 0 1280x720x24 &
+Xvfb :99 -screen 0 800x600x24 &
 sleep 2
+
+# Start openbox window manager (handles expose events for proper repaints)
+echo "Starting openbox window manager..."
+DISPLAY=:99 openbox --config-file /app/openbox-rc.xml &
+sleep 1
 
 # Start x11vnc
 echo "Starting x11vnc..."
