@@ -2,10 +2,38 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { cors } from "hono/cors";
 import { spawn, type Subprocess } from "bun";
-import { mkdir, readdir } from "fs/promises";
-import { join, basename } from "path";
+import { mkdir, readdir, readFile, rm } from "fs/promises";
+import { join, basename, resolve } from "path";
 import { existsSync } from "fs";
 import { streamSSE } from "hono/streaming";
+
+// Review types
+interface ReviewIssue {
+  severity: "error" | "warning" | "info";
+  file?: string;
+  line?: number;
+  message: string;
+  suggestion?: string;
+}
+
+interface ReviewResult {
+  summary: string;
+  overallScore?: number;
+  issues: ReviewIssue[];
+  positives?: string[];
+  timestamp: string;
+}
+
+interface ReviewState {
+  status: "idle" | "reviewing" | "completed" | "error";
+  result: ReviewResult | null;
+  output: string;
+  errorMessage: string | null;
+}
+
+// Use absolute paths for Docker compatibility
+const REVIEW_OUTPUT_PATH = process.env.REVIEW_OUTPUT_PATH || "/app/review-output/review.json";
+const OPENCODE_XDG_CONFIG = process.env.XDG_CONFIG_HOME || "/app/opencode-config";
 
 const app = new Hono();
 
@@ -38,11 +66,23 @@ let state: ProjectState = { ...initialState };
 
 let runningProcess: Subprocess | null = null;
 
+// Review state
+const initialReviewState: ReviewState = {
+  status: "idle",
+  result: null,
+  output: "",
+  errorMessage: null,
+};
+
+let reviewState: ReviewState = { ...initialReviewState };
+
 // Event emitters for streaming
 type StreamCallback = (data: string) => void;
 let buildStreamCallbacks: StreamCallback[] = [];
 let runStreamCallbacks: StreamCallback[] = [];
+let reviewStreamCallbacks: StreamCallback[] = [];
 let statusStreamCallbacks: ((status: ProjectState) => void)[] = [];
+let reviewStatusCallbacks: ((status: ReviewState) => void)[] = [];
 
 function emitBuildOutput(data: string) {
   state.buildOutput += data;
@@ -54,8 +94,17 @@ function emitRunOutput(data: string) {
   runStreamCallbacks.forEach((cb) => cb(data));
 }
 
+function emitReviewOutput(data: string) {
+  reviewState.output += data;
+  reviewStreamCallbacks.forEach((cb) => cb(data));
+}
+
 function emitStatusChange() {
   statusStreamCallbacks.forEach((cb) => cb(state));
+}
+
+function emitReviewStatusChange() {
+  reviewStatusCallbacks.forEach((cb) => cb(reviewState));
 }
 
 const UPLOADS_DIR = "./uploads";
@@ -274,6 +323,7 @@ app.post("/api/upload", async (c) => {
 });
 
 // Build the project (async - returns immediately, poll /api/status for result)
+// Also starts code review in parallel
 app.post("/api/build", async (c) => {
   if (!state.csprojPath) {
     return c.json({ error: "No project uploaded" }, 400);
@@ -291,7 +341,12 @@ app.post("/api/build", async (c) => {
   // Start build in background
   runBuild();
 
-  return c.json({ success: true, message: "Build started" });
+  // Start code review in parallel (if not already reviewing)
+  if (reviewState.status !== "reviewing" && state.projectPath) {
+    runReview(state.projectPath);
+  }
+
+  return c.json({ success: true, message: "Build and review started" });
 });
 
 // Background build function with streaming
@@ -368,6 +423,153 @@ async function runBuild() {
     state.status = "error";
     state.errorMessage = message;
     emitStatusChange();
+  }
+}
+
+// Background review function using opencode
+async function runReview(projectPath: string) {
+  try {
+    // Clean up previous review output
+    try {
+      await rm(REVIEW_OUTPUT_PATH, { force: true });
+    } catch {
+      // Ignore if file doesn't exist
+    }
+    // Ensure output directory exists (use dirname to handle both relative and absolute paths)
+    const reviewDir = REVIEW_OUTPUT_PATH.substring(0, REVIEW_OUTPUT_PATH.lastIndexOf('/'));
+    await mkdir(reviewDir, { recursive: true });
+
+    // Resolve to absolute path for opencode
+    const absoluteProjectPath = resolve(projectPath);
+
+    reviewState = {
+      status: "reviewing",
+      result: null,
+      output: "",
+      errorMessage: null,
+    };
+    emitReviewStatusChange();
+    emitReviewOutput("Starting code review...\n");
+    emitReviewOutput(`Project path: ${absoluteProjectPath}\n`);
+    emitReviewOutput(`Config path: ${OPENCODE_XDG_CONFIG}\n`);
+    emitReviewOutput(`Output path: ${REVIEW_OUTPUT_PATH}\n`);
+
+    const reviewPrompt = `Review this C# WinForms project. Analyze the code for:
+1. Code quality and naming conventions
+2. Best practices and proper C# patterns
+3. Potential bugs or logic errors
+4. Architecture and separation of concerns
+5. Security considerations
+
+After your analysis, you MUST use the submit_review tool to provide your structured feedback.
+Do not attempt to modify any files - only read and analyze them.`;
+
+    // Run opencode with sandboxed configuration
+    // Note: opencode must be run FROM the project directory, not with path as argument
+    const reviewProc = spawn({
+      cmd: [
+        "opencode",
+        "run",
+        "--agent", "code-reviewer",
+        "--format", "json",
+        reviewPrompt,
+      ],
+      cwd: absoluteProjectPath,
+      env: {
+        ...process.env,
+        // Use XDG directories for isolated config (security: prevents access to system config)
+        XDG_CONFIG_HOME: OPENCODE_XDG_CONFIG,
+        XDG_DATA_HOME: "/tmp/opencode-data",
+        XDG_STATE_HOME: "/tmp/opencode-state",
+        XDG_CACHE_HOME: "/tmp/opencode-cache",
+        // Plugin output path
+        REVIEW_OUTPUT_PATH: REVIEW_OUTPUT_PATH,
+        // Ensure no interactive prompts
+        CI: "true",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const decoder = new TextDecoder();
+
+    // Stream stdout
+    const stdoutReader = reviewProc.stdout.getReader();
+    (async () => {
+      while (true) {
+        const { done, value } = await stdoutReader.read();
+        if (done) break;
+        emitReviewOutput(decoder.decode(value));
+      }
+    })();
+
+    // Stream stderr
+    const stderrReader = reviewProc.stderr.getReader();
+    (async () => {
+      while (true) {
+        const { done, value } = await stderrReader.read();
+        if (done) break;
+        emitReviewOutput(decoder.decode(value));
+      }
+    })();
+
+    await reviewProc.exited;
+    const exitCode = reviewProc.exitCode;
+    
+    emitReviewOutput(`\nOpencode exited with code: ${exitCode}\n`);
+    emitReviewOutput(`Looking for review at: ${REVIEW_OUTPUT_PATH}\n`);
+
+    // Check if review was produced
+    if (existsSync(REVIEW_OUTPUT_PATH)) {
+      try {
+        const reviewData = await readFile(REVIEW_OUTPUT_PATH, "utf-8");
+        const result: ReviewResult = JSON.parse(reviewData);
+        reviewState = {
+          status: "completed",
+          result,
+          output: reviewState.output,
+          errorMessage: null,
+        };
+        emitReviewOutput("\nCode review completed successfully!\n");
+        emitReviewStatusChange();
+      } catch (parseError) {
+        const parseMsg = parseError instanceof Error ? parseError.message : "Unknown parse error";
+        emitReviewOutput(`\nFailed to parse review: ${parseMsg}\n`);
+        reviewState = {
+          status: "error",
+          result: null,
+          output: reviewState.output,
+          errorMessage: `Failed to parse review output: ${parseMsg}`,
+        };
+        emitReviewStatusChange();
+      }
+    } else {
+      // Include more diagnostic info in the error
+      const errorDetails = [
+        `Exit code: ${exitCode}`,
+        `Expected output at: ${REVIEW_OUTPUT_PATH}`,
+        `XDG_CONFIG_HOME: ${OPENCODE_XDG_CONFIG}`,
+        `Check review output stream for opencode errors`,
+      ].join("; ");
+      
+      emitReviewOutput(`\nReview file not found. ${errorDetails}\n`);
+      reviewState = {
+        status: "error",
+        result: null,
+        output: reviewState.output,
+        errorMessage: `No review output produced. ${errorDetails}`,
+      };
+      emitReviewStatusChange();
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    reviewState = {
+      status: "error",
+      result: null,
+      output: reviewState.output,
+      errorMessage: message,
+    };
+    emitReviewStatusChange();
   }
 }
 
@@ -485,6 +687,160 @@ app.get("/api/run-output", (c) => {
   return c.json({ output: state.runOutput });
 });
 
+// Get review status
+app.get("/api/review", (c) => {
+  return c.json(reviewState);
+});
+
+// Get review output stream
+app.get("/api/stream/review", async (c) => {
+  return streamSSE(c, async (stream) => {
+    // Send existing output first
+    if (reviewState.output) {
+      await stream.writeSSE({
+        data: reviewState.output,
+        event: "output",
+      });
+    }
+
+    const callback = async (data: string) => {
+      try {
+        await stream.writeSSE({
+          data: data,
+          event: "output",
+        });
+      } catch {
+        // Client disconnected
+      }
+    };
+
+    reviewStreamCallbacks.push(callback);
+
+    // Keep connection alive while reviewing
+    while (reviewState.status === "reviewing") {
+      await stream.sleep(100);
+    }
+
+    // Send final status
+    await stream.writeSSE({
+      data: JSON.stringify({ 
+        status: reviewState.status, 
+        result: reviewState.result,
+        error: reviewState.errorMessage 
+      }),
+      event: "complete",
+    });
+  });
+});
+
+// SSE stream for review status changes
+app.get("/api/stream/review-status", async (c) => {
+  return streamSSE(c, async (stream) => {
+    // Send initial state
+    await stream.writeSSE({
+      data: JSON.stringify(reviewState),
+      event: "review-status",
+    });
+
+    const callback = async (status: ReviewState) => {
+      try {
+        await stream.writeSSE({
+          data: JSON.stringify(status),
+          event: "review-status",
+        });
+      } catch {
+        // Client disconnected
+      }
+    };
+
+    reviewStatusCallbacks.push(callback);
+
+    // Keep connection alive
+    while (true) {
+      await stream.sleep(30000);
+    }
+  });
+});
+
+// Debug endpoint to check opencode configuration
+app.get("/api/debug/opencode", async (c) => {
+  try {
+    // Check opencode version and config
+    const versionProc = spawn({
+      cmd: ["opencode", "--version"],
+      env: {
+        ...process.env,
+        XDG_CONFIG_HOME: OPENCODE_XDG_CONFIG,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    
+    const decoder = new TextDecoder();
+    let versionOutput = "";
+    const reader = versionProc.stdout.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      versionOutput += decoder.decode(value);
+    }
+    await versionProc.exited;
+    
+    // Check agent list
+    const agentProc = spawn({
+      cmd: ["opencode", "agent", "list"],
+      env: {
+        ...process.env,
+        XDG_CONFIG_HOME: OPENCODE_XDG_CONFIG,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    
+    let agentOutput = "";
+    const agentReader = agentProc.stdout.getReader();
+    while (true) {
+      const { done, value } = await agentReader.read();
+      if (done) break;
+      agentOutput += decoder.decode(value);
+    }
+    await agentProc.exited;
+    
+    // Check config
+    const configProc = spawn({
+      cmd: ["opencode", "debug", "config"],
+      env: {
+        ...process.env,
+        XDG_CONFIG_HOME: OPENCODE_XDG_CONFIG,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    
+    let configOutput = "";
+    const configReader = configProc.stdout.getReader();
+    while (true) {
+      const { done, value } = await configReader.read();
+      if (done) break;
+      configOutput += decoder.decode(value);
+    }
+    await configProc.exited;
+    
+    return c.json({
+      version: versionOutput.trim(),
+      agents: agentOutput,
+      config: configOutput.substring(0, 2000), // Truncate for readability
+      env: {
+        XDG_CONFIG_HOME: OPENCODE_XDG_CONFIG,
+        REVIEW_OUTPUT_PATH: REVIEW_OUTPUT_PATH,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
 // Reset state
 app.post("/api/reset", async (c) => {
   if (runningProcess) {
@@ -504,8 +860,17 @@ app.post("/api/reset", async (c) => {
     // Ignore cleanup errors
   }
 
+  // Clean up review output
+  try {
+    await rm(REVIEW_OUTPUT_PATH, { force: true });
+  } catch {
+    // Ignore if doesn't exist
+  }
+
   state = { ...initialState };
+  reviewState = { ...initialReviewState };
   emitStatusChange();
+  emitReviewStatusChange();
 
   return c.json({ success: true });
 });

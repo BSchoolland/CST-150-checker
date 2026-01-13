@@ -1,0 +1,10 @@
+{
+  "name": "cst150-review-plugin",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.ts",
+  "dependencies": {
+    "@opencode-ai/plugin": "1.1.17"
+  }
+}
+

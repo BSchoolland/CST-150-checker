@@ -267,6 +267,166 @@
         .status-text.building {
             color: #00d4ff;
         }
+
+        /* Review Panel */
+        .review-panel {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #0f3460;
+            margin-top: 20px;
+        }
+        .review-panel h3 {
+            color: #00d4ff;
+            font-size: 1.1em;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .review-summary {
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .review-summary p {
+            line-height: 1.5;
+        }
+        .review-score {
+            display: inline-block;
+            background: #0f3460;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .review-score.high { background: #0f9b0f; }
+        .review-score.medium { background: #f39c12; color: #1a1a2e; }
+        .review-score.low { background: #e94560; }
+
+        .issue-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .issue-item {
+            background: #0a0a15;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-left: 3px solid #555;
+        }
+        .issue-item.error { border-left-color: #e94560; }
+        .issue-item.warning { border-left-color: #f39c12; }
+        .issue-item.info { border-left-color: #00d4ff; }
+
+        .issue-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .issue-severity {
+            font-size: 0.75em;
+            text-transform: uppercase;
+            font-weight: bold;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .issue-severity.error { background: #e94560; color: white; }
+        .issue-severity.warning { background: #f39c12; color: #1a1a2e; }
+        .issue-severity.info { background: #00d4ff; color: #1a1a2e; }
+
+        .issue-location {
+            font-family: 'Consolas', monospace;
+            font-size: 0.85em;
+            color: #888;
+        }
+        .issue-message {
+            font-size: 0.95em;
+            line-height: 1.4;
+        }
+        .issue-suggestion {
+            font-size: 0.85em;
+            color: #0f9b0f;
+            margin-top: 8px;
+            font-style: italic;
+        }
+
+        .positives-list {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(15, 155, 15, 0.1);
+            border-radius: 8px;
+            border: 1px solid rgba(15, 155, 15, 0.3);
+        }
+        .positives-list h4 {
+            color: #0f9b0f;
+            margin-bottom: 10px;
+            font-size: 0.95em;
+        }
+        .positives-list ul {
+            list-style: none;
+            padding: 0;
+        }
+        .positives-list li {
+            padding: 5px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        .positives-list li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #0f9b0f;
+        }
+
+        .review-loading {
+            text-align: center;
+            padding: 30px;
+            color: #888;
+        }
+        .review-output {
+            background: #0a0a15;
+            border-radius: 8px;
+            padding: 12px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.8em;
+            max-height: 250px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.3;
+            color: #aaa;
+        }
+        .review-output::-webkit-scrollbar {
+            width: 6px;
+        }
+        .review-output::-webkit-scrollbar-track {
+            background: #0a0a15;
+        }
+        .review-output::-webkit-scrollbar-thumb {
+            background: #0f3460;
+            border-radius: 3px;
+        }
+        .review-output-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            color: #888;
+            font-size: 0.9em;
+        }
+        .review-error {
+            text-align: center;
+            padding: 20px;
+            color: #e94560;
+        }
+        .review-idle {
+            text-align: center;
+            padding: 20px;
+            color: #555;
+        }
     </style>
 </head>
 <body>
@@ -319,6 +479,20 @@
                     <button id="restartBtn" class="btn-secondary">Restart App</button>
                 </div>
             </div>
+
+            <!-- Review Panel (shown during run step) -->
+            <div class="review-panel" id="reviewPanel">
+                <h3>
+                    <span id="reviewIcon">&#128269;</span>
+                    Code Review
+                </h3>
+                <div id="reviewContent">
+                    <div class="review-loading" id="reviewLoading">
+                        <span class="spinner"></span>
+                        AI is reviewing your code...
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Error Step -->
@@ -369,6 +543,15 @@
         let statusEventSource = null;
         let buildEventSource = null;
         let runEventSource = null;
+        let reviewEventSource = null;
+        let reviewOutputEventSource = null;
+        let reviewOutputText = '';
+
+        // Review elements
+        const reviewPanel = document.getElementById('reviewPanel');
+        const reviewContent = document.getElementById('reviewContent');
+        const reviewIcon = document.getElementById('reviewIcon');
+        const reviewLoading = document.getElementById('reviewLoading');
 
         // Transition to a step
         function goToStep(stepName) {
@@ -466,7 +649,7 @@
             buildStatus.className = 'status-text building';
 
             try {
-                // Start the build
+                // Start the build (this also starts review in parallel)
                 const res = await fetch(`${API_BASE}/api/build`, { method: 'POST' });
                 if (!res.ok) {
                     const data = await res.json();
@@ -476,6 +659,9 @@
 
                 // Stream build output
                 streamBuildOutput();
+
+                // Start streaming review status
+                startReviewStream();
             } catch (err) {
                 showError('Build failed: ' + err.message);
             }
@@ -598,11 +784,216 @@
             }
         }
 
+        // Review functions
+        function startReviewStream() {
+            if (reviewEventSource) {
+                reviewEventSource.close();
+            }
+            if (reviewOutputEventSource) {
+                reviewOutputEventSource.close();
+            }
+            reviewOutputText = '';
+
+            reviewEventSource = new EventSource(`${API_BASE}/api/stream/review-status`);
+
+            reviewEventSource.addEventListener('review-status', (e) => {
+                const reviewState = JSON.parse(e.data);
+                updateReviewPanel(reviewState);
+            });
+
+            reviewEventSource.onerror = () => {
+                reviewEventSource.close();
+                reviewEventSource = null;
+                // Fallback to polling
+                fetchReviewStatus();
+            };
+
+            // Also subscribe to output stream for live agent actions
+            reviewOutputEventSource = new EventSource(`${API_BASE}/api/stream/review`);
+
+            reviewOutputEventSource.addEventListener('output', (e) => {
+                reviewOutputText += parseAgentOutput(e.data);
+                updateReviewOutputDisplay();
+            });
+
+            reviewOutputEventSource.addEventListener('complete', () => {
+                reviewOutputEventSource.close();
+                reviewOutputEventSource = null;
+            });
+
+            reviewOutputEventSource.onerror = () => {
+                reviewOutputEventSource.close();
+                reviewOutputEventSource = null;
+            };
+        }
+
+        function parseAgentOutput(data) {
+            // Parse JSON streaming output and extract meaningful text
+            const lines = data.split('\n').filter(line => line.trim());
+            let result = '';
+            for (const line of lines) {
+                // Skip non-JSON lines (like "Starting code review...")
+                if (!line.startsWith('{')) {
+                    result += line + '\n';
+                    continue;
+                }
+                try {
+                    const obj = JSON.parse(line);
+                    if (obj.type === 'text' && obj.part?.text) {
+                        result += obj.part.text + '\n';
+                    } else if (obj.type === 'tool_use' && obj.part) {
+                        const tool = obj.part.tool;
+                        const input = obj.part.state?.input || {};
+                        if (tool === 'read') {
+                            result += `📄 Reading: ${input.filePath || input.path || 'file'}\n`;
+                        } else if (tool === 'list') {
+                            result += `📁 Listing: ${input.directory || input.path || '.'}\n`;
+                        } else if (tool === 'glob') {
+                            result += `🔍 Glob: ${input.pattern || input.glob || '*'}\n`;
+                        } else if (tool === 'grep') {
+                            result += `🔎 Grep: ${input.pattern || 'pattern'}\n`;
+                        } else if (tool === 'submit_review') {
+                            result += `✅ Submitting review...\n`;
+                        } else {
+                            result += `🔧 Tool: ${tool}\n`;
+                        }
+                    } else if (obj.type === 'tool_call') {
+                        // Alternative format for tool calls
+                        const tool = obj.tool || obj.name || obj.part?.tool;
+                        const input = obj.input || obj.args || obj.part?.input || {};
+                        if (tool === 'read') {
+                            result += `📄 Reading: ${input.filePath || input.path || 'file'}\n`;
+                        } else if (tool === 'list') {
+                            result += `📁 Listing: ${input.directory || input.path || '.'}\n`;
+                        } else if (tool === 'glob') {
+                            result += `🔍 Glob: ${input.pattern || '*'}\n`;
+                        } else if (tool === 'grep') {
+                            result += `🔎 Grep: ${input.pattern || 'pattern'}\n`;
+                        } else if (tool === 'submit_review') {
+                            result += `✅ Submitting review...\n`;
+                        } else if (tool) {
+                            result += `🔧 Tool: ${tool}\n`;
+                        }
+                    }
+                } catch (e) {
+                    // Not JSON, show as-is
+                    result += line + '\n';
+                }
+            }
+            return result;
+        }
+
+        function updateReviewOutputDisplay() {
+            const outputEl = document.getElementById('reviewOutputArea');
+            if (outputEl) {
+                outputEl.textContent = reviewOutputText;
+                outputEl.scrollTop = outputEl.scrollHeight;
+            }
+        }
+
+        async function fetchReviewStatus() {
+            try {
+                const res = await fetch(`${API_BASE}/api/review`);
+                const reviewState = await res.json();
+                updateReviewPanel(reviewState);
+            } catch (err) {
+                console.error('Review status check failed:', err);
+            }
+        }
+
+        function updateReviewPanel(reviewState) {
+            if (reviewState.status === 'idle') {
+                reviewContent.innerHTML = '<div class="review-idle">Code review will start with the build...</div>';
+                reviewIcon.textContent = '🔍';
+            } else if (reviewState.status === 'reviewing') {
+                // Show streaming output during review
+                const outputToShow = reviewOutputText || reviewState.output || '';
+                reviewContent.innerHTML = `
+                    <div class="review-output-header">
+                        <span class="spinner"></span>
+                        <span>Agent is analyzing your code...</span>
+                    </div>
+                    <div class="review-output" id="reviewOutputArea">${escapeHtml(outputToShow)}</div>
+                `;
+                reviewIcon.textContent = '🔍';
+                // Scroll to bottom
+                const outputEl = document.getElementById('reviewOutputArea');
+                if (outputEl) outputEl.scrollTop = outputEl.scrollHeight;
+            } else if (reviewState.status === 'error') {
+                reviewContent.innerHTML = `<div class="review-error">Review failed: ${reviewState.errorMessage || 'Unknown error'}</div>`;
+                reviewIcon.textContent = '❌';
+            } else if (reviewState.status === 'completed' && reviewState.result) {
+                renderReviewResult(reviewState.result);
+                reviewIcon.textContent = '✅';
+            }
+        }
+
+        function renderReviewResult(result) {
+            let html = '';
+
+            // Summary
+            html += `<div class="review-summary">
+                <p>${escapeHtml(result.summary)}</p>`;
+            
+            if (result.overallScore !== undefined) {
+                let scoreClass = 'low';
+                if (result.overallScore >= 80) scoreClass = 'high';
+                else if (result.overallScore >= 60) scoreClass = 'medium';
+                html += `<div class="review-score ${scoreClass}">Score: ${result.overallScore}/100</div>`;
+            }
+            html += '</div>';
+
+            // Issues
+            if (result.issues && result.issues.length > 0) {
+                html += '<div class="issue-list">';
+                for (const issue of result.issues) {
+                    html += `<div class="issue-item ${issue.severity}">
+                        <div class="issue-header">
+                            <span class="issue-severity ${issue.severity}">${issue.severity}</span>
+                            ${issue.file ? `<span class="issue-location">${escapeHtml(issue.file)}${issue.line ? `:${issue.line}` : ''}</span>` : ''}
+                        </div>
+                        <div class="issue-message">${escapeHtml(issue.message)}</div>
+                        ${issue.suggestion ? `<div class="issue-suggestion">💡 ${escapeHtml(issue.suggestion)}</div>` : ''}
+                    </div>`;
+                }
+                html += '</div>';
+            } else {
+                html += '<p style="color: #0f9b0f; text-align: center; padding: 15px;">No issues found! Great work!</p>';
+            }
+
+            // Positives
+            if (result.positives && result.positives.length > 0) {
+                html += '<div class="positives-list"><h4>Things Done Well</h4><ul>';
+                for (const positive of result.positives) {
+                    html += `<li>${escapeHtml(positive)}</li>`;
+                }
+                html += '</ul></div>';
+            }
+
+            reviewContent.innerHTML = html;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         // Button handlers
         doneBtn.addEventListener('click', async () => {
             await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
             await fetch(`${API_BASE}/api/reset`, { method: 'POST' });
             hideVNC();
+            if (reviewEventSource) {
+                reviewEventSource.close();
+                reviewEventSource = null;
+            }
+            if (reviewOutputEventSource) {
+                reviewOutputEventSource.close();
+                reviewOutputEventSource = null;
+            }
+            reviewOutputText = '';
+            reviewContent.innerHTML = '<div class="review-idle">Code review will start with the build...</div>';
             goToStep('upload');
             fileInput.value = '';
         });
@@ -616,6 +1007,16 @@
 
         retryBtn.addEventListener('click', async () => {
             await fetch(`${API_BASE}/api/reset`, { method: 'POST' });
+            if (reviewEventSource) {
+                reviewEventSource.close();
+                reviewEventSource = null;
+            }
+            if (reviewOutputEventSource) {
+                reviewOutputEventSource.close();
+                reviewOutputEventSource = null;
+            }
+            reviewOutputText = '';
+            reviewContent.innerHTML = '<div class="review-idle">Code review will start with the build...</div>';
             goToStep('upload');
             fileInput.value = '';
         });
@@ -632,17 +1033,22 @@
                     showVNC();
                     runOutput.textContent = state.runOutput || '';
                     streamRunOutput();
+                    // Also fetch review status
+                    fetchReviewStatus();
+                    startReviewStream();
                 } else if (state.status === 'building') {
                     projectNameEl.textContent = state.name;
                     goToStep('build');
                     buildOutput.textContent = state.buildOutput || '';
                     streamBuildOutput();
+                    startReviewStream();
                 } else if (state.status === 'built') {
                     projectNameEl.textContent = state.name;
                     goToStep('build');
                     buildOutput.textContent = state.buildOutput || '';
                     buildStatus.innerHTML = 'Build successful!';
                     buildStatus.className = 'status-text';
+                    startReviewStream();
                     setTimeout(() => startRun(), 500);
                 } else if (state.status === 'uploaded') {
                     projectNameEl.textContent = state.name;

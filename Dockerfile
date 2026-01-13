@@ -45,6 +45,14 @@ ENV PATH="/opt/dotnet:$PATH"
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 ENV DOTNET_NOLOGO=1
 
+# Pre-cache common NuGet packages for faster runtime builds
+# Create a minimal WinForms project and restore it so packages are baked into the image
+RUN mkdir -p /tmp/nuget-warmup && \
+    echo '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms></PropertyGroup></Project>' > /tmp/nuget-warmup/Template.csproj && \
+    cd /tmp/nuget-warmup && \
+    dotnet restore --runtime win-x64 -p:EnableWindowsTargeting=true && \
+    cd / && rm -rf /tmp/nuget-warmup
+
 # Setup Wine prefix and install .NET Desktop Runtime for Windows
 ENV WINEPREFIX=/opt/wine-dotnet
 ENV WINEARCH=win64
@@ -73,7 +81,22 @@ RUN mkdir -p /opt/wine-dotnet/drive_c/dotnet /tmp/dotnet-setup && \
     rm -rf /tmp/dotnet-setup
 
 # Create working directories
-RUN mkdir -p /app/uploads /app/projects /app/logs
+RUN mkdir -p /app/uploads /app/projects /app/logs /app/review-output
+
+# Install opencode (sandboxed code review agent)
+# Using the official installer which downloads the latest binary
+RUN curl -fsSL https://opencode.ai/install | bash
+ENV PATH="/root/.opencode/bin:$PATH"
+
+# Create isolated opencode directories (security: prevent access to system config)
+RUN mkdir -p /app/opencode-data /app/opencode-state /app/opencode-cache
+# XDG_CONFIG_HOME tells opencode to look for config in /app/opencode-config/opencode/
+ENV XDG_CONFIG_HOME=/app/opencode-config
+ENV XDG_DATA_HOME=/app/opencode-data
+ENV XDG_STATE_HOME=/app/opencode-state
+ENV XDG_CACHE_HOME=/app/opencode-cache
+# Review output path for the plugin
+ENV REVIEW_OUTPUT_PATH=/app/review-output/review.json
 
 # Display environment
 ENV DISPLAY=:99
@@ -84,10 +107,24 @@ COPY src/ /app/src/
 COPY public/ /app/public/
 COPY openbox-rc.xml /app/openbox-rc.xml
 
+# Copy opencode plugin and configuration
+COPY opencode-plugin/ /app/opencode-plugin/
+COPY opencode-config/ /app/opencode-config/
+
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies for main app
 RUN bun install
+
+# Install opencode plugin dependencies
+WORKDIR /app/opencode-plugin
+RUN bun install
+
+# Install opencode config dependencies (includes plugin reference)
+WORKDIR /app/opencode-config/opencode
+RUN bun install
+
+WORKDIR /app
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
