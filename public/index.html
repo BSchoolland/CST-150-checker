@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CST-150 WinForms Checker</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 900px;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #00d4ff;
+            font-size: 1.8em;
+        }
+
+        /* Step container */
+        .step {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 30px;
+            border: 1px solid #0f3460;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.4s ease, transform 0.4s ease;
+            display: none;
+        }
+        .step.active {
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .step.exit {
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        .step h2 {
+            color: #00d4ff;
+            font-size: 1.4em;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        /* Step 1: Upload */
+        .upload-zone {
+            border: 2px dashed #0f3460;
+            border-radius: 8px;
+            padding: 60px 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #00d4ff;
+            background: rgba(0, 212, 255, 0.1);
+        }
+        .upload-zone input {
+            display: none;
+        }
+        .upload-zone p {
+            font-size: 1.1em;
+        }
+        .upload-zone .subtitle {
+            color: #888;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            color: #00d4ff;
+        }
+
+        /* Step 2: Building */
+        .build-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .project-info {
+            text-align: center;
+            padding: 15px;
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 8px;
+        }
+        .project-name {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+        .output {
+            background: #0a0a15;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.85em;
+            height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.4;
+        }
+        .output::-webkit-scrollbar {
+            width: 8px;
+        }
+        .output::-webkit-scrollbar-track {
+            background: #0a0a15;
+        }
+        .output::-webkit-scrollbar-thumb {
+            background: #0f3460;
+            border-radius: 4px;
+        }
+
+        /* Step 3: Running / Viewer */
+        .viewer-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .vnc-wrapper {
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            aspect-ratio: 16 / 10;
+            position: relative;
+        }
+        .vnc-wrapper iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .vnc-loading {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            color: #555;
+        }
+        .run-output {
+            height: 120px;
+        }
+        .actions {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        /* Buttons */
+        button {
+            background: #00d4ff;
+            color: #1a1a2e;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #00b8e6;
+            transform: translateY(-1px);
+        }
+        button:disabled {
+            background: #555;
+            color: #888;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-danger {
+            background: #e94560;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #d63050;
+        }
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid #0f3460;
+            color: #888;
+        }
+        .btn-secondary:hover {
+            border-color: #00d4ff;
+            color: #00d4ff;
+        }
+
+        /* Loading spinner */
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #00d4ff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Progress indicator */
+        .progress-dots {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .progress-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #0f3460;
+            transition: all 0.3s;
+        }
+        .progress-dot.active {
+            background: #00d4ff;
+            box-shadow: 0 0 10px #00d4ff;
+        }
+        .progress-dot.completed {
+            background: #0f9b0f;
+        }
+
+        /* Error state */
+        .error-message {
+            background: rgba(233, 69, 96, 0.2);
+            border: 1px solid #e94560;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .error-message h3 {
+            color: #e94560;
+            margin-bottom: 10px;
+        }
+
+        /* Status text */
+        .status-text {
+            text-align: center;
+            color: #888;
+            margin-top: 15px;
+        }
+        .status-text.building {
+            color: #00d4ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CST-150 WinForms Checker</h1>
+
+        <!-- Progress Indicator -->
+        <div class="progress-dots">
+            <div class="progress-dot" id="dot1"></div>
+            <div class="progress-dot" id="dot2"></div>
+            <div class="progress-dot" id="dot3"></div>
+        </div>
+
+        <!-- Step 1: Upload -->
+        <div class="step active" id="step-upload">
+            <h2>Upload Your Project</h2>
+            <div class="upload-zone" id="uploadZone">
+                <input type="file" id="fileInput" accept=".zip">
+                <div class="upload-icon">&#128193;</div>
+                <p>Drag & drop your .zip file here</p>
+                <p class="subtitle">or click to browse</p>
+            </div>
+        </div>
+
+        <!-- Step 2: Building -->
+        <div class="step" id="step-build">
+            <h2>Building Project</h2>
+            <div class="build-container">
+                <div class="project-info">
+                    <span class="project-name" id="projectName">-</span>
+                </div>
+                <div class="output" id="buildOutput"></div>
+                <p class="status-text building" id="buildStatus">
+                    <span class="spinner"></span>
+                    Compiling...
+                </p>
+            </div>
+        </div>
+
+        <!-- Step 3: Running -->
+        <div class="step" id="step-run">
+            <h2>Application Running</h2>
+            <div class="viewer-container">
+                <div class="vnc-wrapper" id="vncWrapper">
+                    <div class="vnc-loading" id="vncLoading">Connecting to display...</div>
+                </div>
+                <div class="output run-output" id="runOutput"></div>
+                <div class="actions">
+                    <button id="doneBtn">I'm Done</button>
+                    <button id="restartBtn" class="btn-secondary">Restart App</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Step -->
+        <div class="step" id="step-error">
+            <div class="error-message">
+                <h3>Something went wrong</h3>
+                <p id="errorText">An error occurred</p>
+            </div>
+            <div class="actions" style="margin-top: 20px;">
+                <button id="retryBtn">Try Again</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+
+        // Elements
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const projectNameEl = document.getElementById('projectName');
+        const buildOutput = document.getElementById('buildOutput');
+        const buildStatus = document.getElementById('buildStatus');
+        const runOutput = document.getElementById('runOutput');
+        const vncWrapper = document.getElementById('vncWrapper');
+        const vncLoading = document.getElementById('vncLoading');
+        const doneBtn = document.getElementById('doneBtn');
+        const restartBtn = document.getElementById('restartBtn');
+        const retryBtn = document.getElementById('retryBtn');
+        const errorText = document.getElementById('errorText');
+
+        // Progress dots
+        const dots = [
+            document.getElementById('dot1'),
+            document.getElementById('dot2'),
+            document.getElementById('dot3')
+        ];
+
+        // Steps
+        const steps = {
+            upload: document.getElementById('step-upload'),
+            build: document.getElementById('step-build'),
+            run: document.getElementById('step-run'),
+            error: document.getElementById('step-error')
+        };
+
+        let currentStep = 'upload';
+        let statusEventSource = null;
+        let buildEventSource = null;
+        let runEventSource = null;
+
+        // Transition to a step
+        function goToStep(stepName) {
+            if (currentStep === stepName) return;
+
+            // Update progress dots
+            const stepOrder = ['upload', 'build', 'run'];
+            const stepIndex = stepOrder.indexOf(stepName);
+            dots.forEach((dot, i) => {
+                dot.classList.remove('active', 'completed');
+                if (i < stepIndex) {
+                    dot.classList.add('completed');
+                } else if (i === stepIndex) {
+                    dot.classList.add('active');
+                }
+            });
+
+            // Hide error dots if showing error
+            if (stepName === 'error') {
+                dots.forEach(d => d.classList.remove('active'));
+            }
+
+            // Transition out current step
+            const currentStepEl = steps[currentStep];
+            currentStepEl.classList.add('exit');
+
+            setTimeout(() => {
+                currentStepEl.classList.remove('active', 'exit');
+
+                // Transition in new step
+                const newStepEl = steps[stepName];
+                newStepEl.classList.add('active');
+                currentStep = stepName;
+            }, 300);
+        }
+
+        // File upload handling
+        uploadZone.addEventListener('click', () => fileInput.click());
+
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) uploadFile(file);
+        });
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files[0]) uploadFile(fileInput.files[0]);
+        });
+
+        async function uploadFile(file) {
+            if (!file.name.endsWith('.zip')) {
+                showError('Please upload a .zip file');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch(`${API_BASE}/api/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+
+                if (!res.ok) {
+                    showError(data.error || 'Upload failed');
+                    return;
+                }
+
+                // Update project name and transition to build
+                projectNameEl.textContent = data.project;
+                goToStep('build');
+
+                // Auto-start build
+                startBuild();
+            } catch (err) {
+                showError('Upload failed: ' + err.message);
+            }
+        }
+
+        async function startBuild() {
+            buildOutput.textContent = '';
+            buildStatus.innerHTML = '<span class="spinner"></span>Compiling...';
+            buildStatus.className = 'status-text building';
+
+            try {
+                // Start the build
+                const res = await fetch(`${API_BASE}/api/build`, { method: 'POST' });
+                if (!res.ok) {
+                    const data = await res.json();
+                    showError(data.error || 'Build failed to start');
+                    return;
+                }
+
+                // Stream build output
+                streamBuildOutput();
+            } catch (err) {
+                showError('Build failed: ' + err.message);
+            }
+        }
+
+        function streamBuildOutput() {
+            if (buildEventSource) {
+                buildEventSource.close();
+            }
+
+            buildEventSource = new EventSource(`${API_BASE}/api/stream/build`);
+
+            buildEventSource.addEventListener('output', (e) => {
+                buildOutput.textContent += e.data;
+                buildOutput.scrollTop = buildOutput.scrollHeight;
+            });
+
+            buildEventSource.addEventListener('complete', (e) => {
+                buildEventSource.close();
+                buildEventSource = null;
+
+                const result = JSON.parse(e.data);
+                if (result.status === 'built') {
+                    buildStatus.innerHTML = 'Build successful!';
+                    buildStatus.className = 'status-text';
+
+                    // Auto-start run after short delay
+                    setTimeout(() => {
+                        startRun();
+                    }, 500);
+                } else if (result.status === 'error') {
+                    showError(result.error || 'Build failed');
+                }
+            });
+
+            buildEventSource.onerror = () => {
+                buildEventSource.close();
+                buildEventSource = null;
+                // Check status via polling as fallback
+                checkStatus();
+            };
+        }
+
+        async function startRun() {
+            runOutput.textContent = '';
+            goToStep('run');
+
+            try {
+                const res = await fetch(`${API_BASE}/api/run`, { method: 'POST' });
+                if (!res.ok) {
+                    const data = await res.json();
+                    showError(data.error || 'Failed to start application');
+                    return;
+                }
+
+                // Show VNC viewer
+                showVNC();
+
+                // Stream run output
+                streamRunOutput();
+            } catch (err) {
+                showError('Failed to start: ' + err.message);
+            }
+        }
+
+        function streamRunOutput() {
+            if (runEventSource) {
+                runEventSource.close();
+            }
+
+            runEventSource = new EventSource(`${API_BASE}/api/stream/run`);
+
+            runEventSource.addEventListener('output', (e) => {
+                runOutput.textContent += e.data;
+                runOutput.scrollTop = runOutput.scrollHeight;
+            });
+
+            runEventSource.addEventListener('complete', () => {
+                runEventSource.close();
+                runEventSource = null;
+            });
+
+            runEventSource.onerror = () => {
+                runEventSource.close();
+                runEventSource = null;
+            };
+        }
+
+        function showVNC() {
+            const vncUrl = `${window.location.protocol}//${window.location.hostname}:6080/vnc.html?autoconnect=true&resize=scale`;
+            vncWrapper.innerHTML = `<iframe src="${vncUrl}"></iframe>`;
+        }
+
+        function hideVNC() {
+            vncWrapper.innerHTML = '<div class="vnc-loading" id="vncLoading">Connecting to display...</div>';
+        }
+
+        function showError(message) {
+            errorText.textContent = message;
+            goToStep('error');
+        }
+
+        async function checkStatus() {
+            try {
+                const res = await fetch(`${API_BASE}/api/status`);
+                const state = await res.json();
+
+                if (state.status === 'built' && currentStep === 'build') {
+                    buildOutput.textContent = state.buildOutput;
+                    buildStatus.innerHTML = 'Build successful!';
+                    buildStatus.className = 'status-text';
+                    setTimeout(() => startRun(), 500);
+                } else if (state.status === 'error') {
+                    showError(state.errorMessage || 'An error occurred');
+                }
+            } catch (err) {
+                console.error('Status check failed:', err);
+            }
+        }
+
+        // Button handlers
+        doneBtn.addEventListener('click', async () => {
+            await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
+            await fetch(`${API_BASE}/api/reset`, { method: 'POST' });
+            hideVNC();
+            goToStep('upload');
+            fileInput.value = '';
+        });
+
+        restartBtn.addEventListener('click', async () => {
+            await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
+            hideVNC();
+            runOutput.textContent = '';
+            startRun();
+        });
+
+        retryBtn.addEventListener('click', async () => {
+            await fetch(`${API_BASE}/api/reset`, { method: 'POST' });
+            goToStep('upload');
+            fileInput.value = '';
+        });
+
+        // Initialize - check current status on load
+        async function init() {
+            try {
+                const res = await fetch(`${API_BASE}/api/status`);
+                const state = await res.json();
+
+                if (state.status === 'running') {
+                    projectNameEl.textContent = state.name;
+                    goToStep('run');
+                    showVNC();
+                    runOutput.textContent = state.runOutput || '';
+                    streamRunOutput();
+                } else if (state.status === 'building') {
+                    projectNameEl.textContent = state.name;
+                    goToStep('build');
+                    buildOutput.textContent = state.buildOutput || '';
+                    streamBuildOutput();
+                } else if (state.status === 'built') {
+                    projectNameEl.textContent = state.name;
+                    goToStep('build');
+                    buildOutput.textContent = state.buildOutput || '';
+                    buildStatus.innerHTML = 'Build successful!';
+                    buildStatus.className = 'status-text';
+                    setTimeout(() => startRun(), 500);
+                } else if (state.status === 'uploaded') {
+                    projectNameEl.textContent = state.name;
+                    goToStep('build');
+                    startBuild();
+                } else if (state.status === 'error') {
+                    showError(state.errorMessage || 'An error occurred');
+                }
+                // Otherwise stay on upload step
+            } catch (err) {
+                console.error('Init failed:', err);
+            }
+        }
+
+        // Set first dot as active on load
+        dots[0].classList.add('active');
+
+        init();
+    </script>
+</body>
+</html>
