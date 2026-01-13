@@ -86,8 +86,9 @@ RUN mkdir -p /opt/wine-dotnet/drive_c/dotnet /tmp/dotnet-setup && \
     # Cleanup
     rm -rf /tmp/dotnet-setup
 
-# Create working directories
-RUN mkdir -p /app/uploads /app/projects /app/logs /app/review-output /app/review-input
+# Create working directories (writable by all for uploads/projects)
+RUN mkdir -p /app/uploads /app/projects /app/logs /app/review-output /app/review-input && \
+    chmod 777 /app/uploads /app/projects
 
 # Install opencode (sandboxed code review agent)
 # Using the official installer which downloads the latest binary

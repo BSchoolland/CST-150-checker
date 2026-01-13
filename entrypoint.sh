@@ -3,6 +3,9 @@ set -e
 
 echo "Starting WinForms Checker Container..."
 
+# Ensure mounted directories are writable
+chmod -R 777 /app/uploads /app/projects 2>/dev/null || true
+
 # Cleanup function for graceful shutdown
 cleanup() {
     echo "Shutting down..."

@@ -61,6 +61,9 @@
         .step-item.failed {
             color: #e94560;
         }
+        .step-item.warning {
+            color: #f39c12;
+        }
         .step-icon {
             width: 24px;
             height: 24px;
@@ -514,46 +517,205 @@
             padding: 20px;
             color: #555;
         }
+
+        /* Assignment cards */
+        .assignment-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 25px;
+        }
+        .assignment-cards h3 {
+            color: #00d4ff;
+            font-size: 1em;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        .assignment-card {
+            background: #0a0a15;
+            border: 2px solid #0f3460;
+            border-radius: 10px;
+            padding: 16px 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .assignment-card:hover {
+            border-color: #00d4ff;
+            background: rgba(0, 212, 255, 0.05);
+        }
+        .assignment-card.selected {
+            border-color: #00d4ff;
+            background: rgba(0, 212, 255, 0.1);
+        }
+        .assignment-card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+        .assignment-card-radio {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #0f3460;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .assignment-card.selected .assignment-card-radio {
+            border-color: #00d4ff;
+        }
+        .assignment-card.selected .assignment-card-radio::after {
+            content: '';
+            width: 10px;
+            height: 10px;
+            background: #00d4ff;
+            border-radius: 50%;
+        }
+        .assignment-card-title {
+            font-weight: 600;
+            color: #eee;
+            font-size: 1.05em;
+        }
+        .assignment-card-part {
+            font-size: 0.8em;
+            color: #00d4ff;
+            background: rgba(0, 212, 255, 0.15);
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: auto;
+        }
+        .assignment-card-desc {
+            color: #aaa;
+            font-size: 0.9em;
+            line-height: 1.4;
+            margin-bottom: 10px;
+        }
+        .assignment-card-reqs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .assignment-card-req {
+            font-size: 0.75em;
+            color: #888;
+            background: #16213e;
+            padding: 4px 10px;
+            border-radius: 12px;
+        }
+        .upload-zone.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        /* Page containers */
+        .page {
+            display: none;
+            width: 100%;
+            min-height: 100vh;
+        }
+        .page.active {
+            display: flex;
+        }
+
+        /* Assignment selection page (centered, no sidebar) */
+        .page-select {
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+        .page-select .select-container {
+            width: 100%;
+            max-width: 700px;
+        }
+        .page-select h1 {
+            color: #00d4ff;
+            font-size: 1.8em;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .page-select .subtitle {
+            color: #888;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .page-select .assignment-cards {
+            margin-bottom: 0;
+        }
+        .page-select .assignment-cards h3 {
+            display: none;
+        }
+
+        /* Workflow page (with sidebar) */
+        .page-workflow {
+            flex-direction: row;
+        }
     </style>
 </head>
 <body>
-    <!-- Sidebar with step indicators -->
-    <div class="sidebar">
-        <h1>CST-150 Checker</h1>
-        <ul class="step-list">
-            <li class="step-item active" id="sidebar-upload">
-                <span class="step-icon" id="icon-upload"><span class="empty"></span></span>
-                <span class="step-name">Upload</span>
-            </li>
-            <li class="step-item" id="sidebar-build">
-                <span class="step-icon" id="icon-build"><span class="empty"></span></span>
-                <span class="step-name">Build</span>
-            </li>
-            <li class="step-item" id="sidebar-run">
-                <span class="step-icon" id="icon-run"><span class="empty"></span></span>
-                <span class="step-name">Run & Verify</span>
-            </li>
-            <li class="step-item" id="sidebar-review">
-                <span class="step-icon" id="icon-review"><span class="empty"></span></span>
-                <span class="step-name">Code Review</span>
-                <div class="sidebar-review-preview" id="sidebarReviewPreview"></div>
-            </li>
-        </ul>
-    </div>
-
-    <!-- Main content area -->
-    <div class="main-content">
-        <div class="container">
-            <!-- Step 1: Upload -->
-            <div class="step active" id="step-upload">
-                <h2>Upload Your Project</h2>
-                <div class="upload-zone" id="uploadZone">
-                    <input type="file" id="fileInput" accept=".zip">
-                    <div class="upload-icon">&#128193;</div>
-                    <p>Drag & drop your .zip file here</p>
-                    <p class="subtitle">or click to browse</p>
+    <!-- PAGE 1: Assignment Selection -->
+    <div class="page page-select active" id="page-select">
+        <div class="select-container">
+            <h1>CST-150 Checker</h1>
+            <p class="subtitle">Select an assignment to check your project</p>
+            <div class="assignment-cards">
+                <h3>Select Assignment</h3>
+                <div id="assignmentCardsContainer">
+                    <!-- Cards populated by JavaScript -->
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- PAGE 2: Workflow (Upload, Build, Run, Review) -->
+    <div class="page page-workflow" id="page-workflow">
+        <!-- Sidebar with step indicators -->
+        <div class="sidebar">
+            <h1>CST-150 Checker</h1>
+            <ul class="step-list">
+                <li class="step-item active" id="sidebar-upload">
+                    <span class="step-icon" id="icon-upload"><span class="empty"></span></span>
+                    <span class="step-name">Upload</span>
+                </li>
+                <li class="step-item" id="sidebar-build">
+                    <span class="step-icon" id="icon-build"><span class="empty"></span></span>
+                    <span class="step-name">Build</span>
+                </li>
+                <li class="step-item" id="sidebar-run">
+                    <span class="step-icon" id="icon-run"><span class="empty"></span></span>
+                    <span class="step-name">Run & Verify</span>
+                </li>
+                <li class="step-item" id="sidebar-review">
+                    <span class="step-icon" id="icon-review"><span class="empty"></span></span>
+                    <span class="step-name">Code Review</span>
+                    <div class="sidebar-review-preview" id="sidebarReviewPreview"></div>
+                </li>
+            </ul>
+            <div style="margin-top: auto; padding-top: 20px;">
+                <button id="changeAssignmentBtn" class="btn-secondary" style="width: 100%;">Change Assignment</button>
+            </div>
+        </div>
+
+        <!-- Main content area -->
+        <div class="main-content">
+            <div class="container">
+                <!-- Selected assignment display -->
+                <div class="selected-assignment-banner" id="selectedAssignmentBanner" style="background: rgba(0, 212, 255, 0.1); border: 1px solid #0f3460; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; text-align: center;">
+                    <span id="selectedAssignmentName" style="color: #00d4ff; font-weight: 500;"></span>
+                </div>
+
+                <!-- Step 1: Upload -->
+                <div class="step active" id="step-upload">
+                    <h2>Upload Your Project</h2>
+                    <div class="upload-zone" id="uploadZone">
+                        <input type="file" id="fileInput" accept=".zip">
+                        <div class="upload-icon">&#128193;</div>
+                        <p>Drag & drop your .zip file here</p>
+                        <p class="subtitle">or click to browse</p>
+                    </div>
+                </div>
 
             <!-- Step 2: Building -->
             <div class="step" id="step-build">
@@ -615,10 +777,101 @@
                 </div>
             </div>
         </div>
+        </div>
     </div>
 
     <script>
         const API_BASE = '';
+
+        // Assignment data
+        let assignmentParts = [];
+        let selectedAssignmentId = null;
+        const assignmentCardsContainer = document.getElementById('assignmentCardsContainer');
+
+        // Load assignments on startup
+        async function loadAssignments() {
+            try {
+                const res = await fetch(`${API_BASE}/api/assignment-parts`);
+                assignmentParts = await res.json();
+
+                // Render cards
+                renderAssignmentCards();
+            } catch (err) {
+                console.error('Failed to load assignments:', err);
+            }
+        }
+
+        function renderAssignmentCards() {
+            assignmentCardsContainer.innerHTML = assignmentParts.map(part => {
+                const requirements = JSON.parse(part.requirements);
+                // Extract assignment number from assignment_name (e.g., "CST-150 Activity 1" -> "1")
+                const assignmentMatch = part.assignment_name ? part.assignment_name.match(/(\d+)\s*$/) : null;
+                const assignmentNum = assignmentMatch ? assignmentMatch[1] : '1';
+                return `
+                    <div class="assignment-card" data-id="${part.id}">
+                        <div class="assignment-card-header">
+                            <div class="assignment-card-radio"></div>
+                            <span class="assignment-card-title">Assignment ${assignmentNum} Part ${part.part_number}: ${escapeHtml(part.title)}</span>
+                        </div>
+                        <div class="assignment-card-desc">${escapeHtml(part.description)}</div>
+                        <div class="assignment-card-reqs">
+                            ${requirements.map(r => `<span class="assignment-card-req">${escapeHtml(r)}</span>`).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Add click handlers
+            document.querySelectorAll('.assignment-card').forEach(card => {
+                card.addEventListener('click', () => selectAssignment(parseInt(card.dataset.id)));
+            });
+        }
+
+        function selectAssignment(partId) {
+            selectedAssignmentId = partId;
+
+            // Find the selected assignment part
+            const selectedPart = assignmentParts.find(p => p.id === partId);
+            if (selectedPart) {
+                // Extract assignment number from assignment_name
+                const assignmentMatch = selectedPart.assignment_name ? selectedPart.assignment_name.match(/(\d+)\s*$/) : null;
+                const assignmentNum = assignmentMatch ? assignmentMatch[1] : '1';
+                const displayName = `Assignment ${assignmentNum} Part ${selectedPart.part_number}: ${selectedPart.title}`;
+                document.getElementById('selectedAssignmentName').textContent = displayName;
+            }
+
+            // Update server with selection
+            fetch(`${API_BASE}/api/select-assignment`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ partId })
+            });
+
+            // Navigate to workflow page
+            goToPage('workflow');
+        }
+
+        function clearAssignmentSelection() {
+            selectedAssignmentId = null;
+            document.querySelectorAll('.assignment-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+        }
+
+        // Page navigation
+        const pages = {
+            select: document.getElementById('page-select'),
+            workflow: document.getElementById('page-workflow')
+        };
+        let currentPage = 'select';
+
+        function goToPage(pageName) {
+            if (currentPage === pageName) return;
+
+            pages[currentPage].classList.remove('active');
+            pages[pageName].classList.add('active');
+            currentPage = pageName;
+        }
 
         // Elements
         const uploadZone = document.getElementById('uploadZone');
@@ -757,6 +1010,11 @@
         async function uploadFile(file) {
             if (!file.name.endsWith('.zip')) {
                 showError('Please upload a .zip file');
+                return;
+            }
+
+            if (!selectedAssignmentId) {
+                showError('Please select an assignment first');
                 return;
             }
 
@@ -1189,7 +1447,40 @@
             updateSidebarIcon('review', 'pending');
             sidebarReviewPreview.classList.remove('active');
             sidebarItems.review.classList.remove('has-preview');
+            // Reset assignment selection and go back to selection page
+            clearAssignmentSelection();
             goToStep('upload');
+            goToPage('select');
+            fileInput.value = '';
+        });
+
+        // Change assignment button
+        const changeAssignmentBtn = document.getElementById('changeAssignmentBtn');
+        changeAssignmentBtn.addEventListener('click', async () => {
+            await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
+            await fetch(`${API_BASE}/api/reset`, { method: 'POST' });
+            hideVNC();
+            if (reviewEventSource) {
+                reviewEventSource.close();
+                reviewEventSource = null;
+            }
+            if (reviewOutputEventSource) {
+                reviewOutputEventSource.close();
+                reviewOutputEventSource = null;
+            }
+            reviewOutputText = '';
+            reviewContent.innerHTML = '<div class="review-loading"><span class="spinner"></span>AI is reviewing your code...</div>';
+            // Reset all sidebar icons and preview
+            updateSidebarIcon('upload', 'pending');
+            updateSidebarIcon('build', 'pending');
+            updateSidebarIcon('run', 'pending');
+            updateSidebarIcon('review', 'pending');
+            sidebarReviewPreview.classList.remove('active');
+            sidebarItems.review.classList.remove('has-preview');
+            // Reset assignment selection and go back to selection page
+            clearAssignmentSelection();
+            goToStep('upload');
+            goToPage('select');
             fileInput.value = '';
         });
 
@@ -1219,9 +1510,25 @@
             updateSidebarIcon('review', 'pending');
             sidebarReviewPreview.classList.remove('active');
             sidebarItems.review.classList.remove('has-preview');
+            // Reset assignment selection and go back to selection page
+            clearAssignmentSelection();
             goToStep('upload');
+            goToPage('select');
             fileInput.value = '';
         });
+
+        // Helper to update selected assignment banner when recovering state
+        function updateSelectedAssignmentBanner(partId) {
+            if (!partId || assignmentParts.length === 0) return;
+            selectedAssignmentId = partId;
+            const selectedPart = assignmentParts.find(p => p.id === partId);
+            if (selectedPart) {
+                const assignmentMatch = selectedPart.assignment_name ? selectedPart.assignment_name.match(/(\d+)\s*$/) : null;
+                const assignmentNum = assignmentMatch ? assignmentMatch[1] : '1';
+                const displayName = `Assignment ${assignmentNum} Part ${selectedPart.part_number}: ${selectedPart.title}`;
+                document.getElementById('selectedAssignmentName').textContent = displayName;
+            }
+        }
 
         // Initialize - check current status on load
         async function init() {
@@ -1230,6 +1537,8 @@
                 const state = await res.json();
 
                 if (state.status === 'running') {
+                    goToPage('workflow');
+                    updateSelectedAssignmentBanner(state.selectedAssignmentPartId);
                     projectNameEl.textContent = state.name;
                     updateSidebarIcon('upload', 'completed');
                     updateSidebarIcon('build', 'completed');
@@ -1242,6 +1551,8 @@
                     fetchReviewStatus();
                     startReviewStream();
                 } else if (state.status === 'building') {
+                    goToPage('workflow');
+                    updateSelectedAssignmentBanner(state.selectedAssignmentPartId);
                     projectNameEl.textContent = state.name;
                     updateSidebarIcon('upload', 'completed');
                     updateSidebarIcon('build', 'processing');
@@ -1250,6 +1561,8 @@
                     streamBuildOutput();
                     startReviewStream();
                 } else if (state.status === 'built') {
+                    goToPage('workflow');
+                    updateSelectedAssignmentBanner(state.selectedAssignmentPartId);
                     projectNameEl.textContent = state.name;
                     updateSidebarIcon('upload', 'completed');
                     updateSidebarIcon('build', 'completed');
@@ -1260,14 +1573,18 @@
                     startReviewStream();
                     setTimeout(() => startRun(), 500);
                 } else if (state.status === 'uploaded') {
+                    goToPage('workflow');
+                    updateSelectedAssignmentBanner(state.selectedAssignmentPartId);
                     projectNameEl.textContent = state.name;
                     updateSidebarIcon('upload', 'completed');
                     goToStep('build');
                     startBuild();
                 } else if (state.status === 'error') {
+                    goToPage('workflow');
+                    updateSelectedAssignmentBanner(state.selectedAssignmentPartId);
                     showError(state.errorMessage || 'An error occurred');
                 }
-                // Otherwise stay on upload step
+                // Otherwise stay on select page
             } catch (err) {
                 console.error('Init failed:', err);
             }
@@ -1276,7 +1593,8 @@
         // Set first step as active on load (not spinning, just highlighted)
         sidebarItems.upload.classList.add('active');
 
-        init();
+        // Load assignments and then initialize
+        loadAssignments().then(() => init());
     </script>
 </body>
 </html>

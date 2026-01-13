@@ -6,6 +6,14 @@ import { mkdir, readdir, readFile, rm } from "fs/promises";
 import { join, basename, resolve } from "path";
 import { existsSync } from "fs";
 import { streamSSE } from "hono/streaming";
+import {
+  getAllAssignments,
+  getAllAssignmentParts,
+  getAssignmentPart,
+  getAssignmentWithParts,
+  seedDatabase,
+  type AssignmentPart,
+} from "./db";
 
 // Review types
 interface ReviewIssue {
@@ -48,6 +56,7 @@ interface ProjectState {
   buildOutput: string;
   runOutput: string;
   errorMessage: string | null;
+  selectedAssignmentPartId: number | null;
 }
 
 const initialState: ProjectState = {
@@ -60,9 +69,13 @@ const initialState: ProjectState = {
   buildOutput: "",
   runOutput: "",
   errorMessage: null,
+  selectedAssignmentPartId: null,
 };
 
 let state: ProjectState = { ...initialState };
+
+// Initialize database on startup
+seedDatabase();
 
 let runningProcess: Subprocess | null = null;
 
@@ -96,6 +109,7 @@ function emitRunOutput(data: string) {
 
 function emitReviewOutput(data: string) {
   reviewState.output += data;
+  process.stdout.write(`[review] ${data}`);
   reviewStreamCallbacks.forEach((cb) => cb(data));
 }
 
@@ -123,6 +137,53 @@ app.get("/", serveStatic({ path: "./public/index.html" }));
 // Get current status
 app.get("/api/status", (c) => {
   return c.json(state);
+});
+
+// Assignment API endpoints
+app.get("/api/assignments", (c) => {
+  const assignments = getAllAssignments();
+  return c.json(assignments);
+});
+
+app.get("/api/assignments/:id", (c) => {
+  const id = parseInt(c.req.param("id"));
+  const assignment = getAssignmentWithParts(id);
+  if (!assignment) {
+    return c.json({ error: "Assignment not found" }, 404);
+  }
+  return c.json(assignment);
+});
+
+app.get("/api/assignment-parts", (c) => {
+  const parts = getAllAssignmentParts();
+  return c.json(parts);
+});
+
+app.get("/api/assignment-parts/:id", (c) => {
+  const id = parseInt(c.req.param("id"));
+  const part = getAssignmentPart(id);
+  if (!part) {
+    return c.json({ error: "Assignment part not found" }, 404);
+  }
+  return c.json(part);
+});
+
+// Select an assignment part for the current project
+app.post("/api/select-assignment", async (c) => {
+  const body = await c.req.json();
+  const partId = body.partId as number | null;
+
+  if (partId !== null) {
+    const part = getAssignmentPart(partId);
+    if (!part) {
+      return c.json({ error: "Assignment part not found" }, 404);
+    }
+  }
+
+  state.selectedAssignmentPartId = partId;
+  emitStatusChange();
+
+  return c.json({ success: true, selectedPartId: partId });
 });
 
 // SSE stream for status changes
@@ -251,6 +312,14 @@ app.post("/api/upload", async (c) => {
     }
     await mkdir(PROJECTS_DIR, { recursive: true });
 
+    // Clean up previous review output file
+    try {
+      await rm(REVIEW_OUTPUT_PATH, { force: true });
+      console.log(`Deleted review cache: ${REVIEW_OUTPUT_PATH}`);
+    } catch (err) {
+      console.error(`Failed to delete review cache: ${err}`);
+    }
+
     const formData = await c.req.formData();
     const file = formData.get("file") as File;
 
@@ -306,7 +375,13 @@ app.post("/api/upload", async (c) => {
       buildOutput: "",
       runOutput: "",
       errorMessage: null,
+      selectedAssignmentPartId: state.selectedAssignmentPartId,
     };
+
+    // Reset review state on new upload to prevent caching
+    reviewState = { ...initialReviewState };
+    console.log("Reset reviewState to idle");
+    emitReviewStatusChange();
 
     emitStatusChange();
     return c.json({ success: true, project: state.name });
@@ -501,15 +576,126 @@ async function runReview(projectPath: string) {
       throw new Error(`Failed to copy project files to sandbox: ${copyStderrOutput}`);
     }
 
-    const reviewPrompt = `Review this C# WinForms project. Analyze the code for:
-1. Code quality and naming conventions
-2. Best practices and proper C# patterns
-3. Potential bugs or logic errors
-4. Architecture and separation of concerns
-5. Security considerations
+    // Build dynamic agent system prompt with assignment requirements
+    let agentSystemPrompt: string;
+    let reviewPrompt: string;
 
-After your analysis, you MUST use the submit_review tool to provide your structured feedback.
-Do not attempt to modify any files - only read and analyze them.`;
+    if (state.selectedAssignmentPartId) {
+      const assignmentPart = getAssignmentPart(state.selectedAssignmentPartId);
+      if (assignmentPart) {
+        const requirements = JSON.parse(assignmentPart.requirements) as string[];
+        emitReviewOutput(`Reviewing against assignment: ${assignmentPart.title}\n`);
+
+        // Build system prompt with assignment requirements embedded
+        agentSystemPrompt = `You are an assignment grader for a CST-150 C# programming course.
+
+## YOUR ASSIGNMENT TO GRADE
+
+**Assignment:** ${assignmentPart.title}
+
+**Description:** ${assignmentPart.description}
+
+**Requirements (student MUST implement all of these):**
+${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}
+
+**Grading Rubric:**
+${assignmentPart.review_criteria}
+
+## GRADING INSTRUCTIONS
+
+Your task is to evaluate the student's code against the requirements and rubric above.
+
+### For EACH requirement, you must determine:
+- **Met**: Requirement is fully and correctly implemented
+- **Partially Met**: Requirement is attempted but has issues (wrong formula, incorrect format, etc.)
+- **Not Met**: Requirement is missing or fundamentally broken
+
+### Evaluation Categories:
+
+1. **Functionality** (Most Important)
+   - Does the program do what the assignment asked?
+   - Are calculations/formulas correct?
+   - Does output match required format?
+
+2. **Naming Conventions**
+   - Control prefixes: btn, lbl, txt for Button, Label, TextBox
+   - Variables: camelCase for locals
+   - Meaningful names vs default names (button1, label1)
+
+3. **Code Quality**
+   - Are there comments explaining the code?
+   - Is the code readable and organized?
+
+### Output Format
+
+After analyzing the code, you MUST use the \`submit_review\` tool with:
+- **summary**: Overall assessment of how well the student met the assignment
+- **overallScore**: Grade from 0-100 based on requirements met
+- **requirementResults**: For EACH requirement listed above, whether it was met/partial/not_met with explanation
+- **issues**: Specific problems found, with file and line references
+- **positives**: What the student did well
+
+Be educational and encouraging while being accurate about what was and wasn't implemented correctly.
+
+Do NOT attempt to modify any files. Your only output mechanism is the submit_review tool.`;
+
+        reviewPrompt = "Review the student's code in /app/project against the assignment requirements.";
+      } else {
+        // Assignment part not found - fail hard
+        throw new Error(`Assignment part with ID ${state.selectedAssignmentPartId} not found in database. Cannot proceed with review.`);
+      }
+    } else {
+      // No assignment selected - fail hard, require assignment selection
+      throw new Error("No assignment selected. You must select an assignment before running code review.");
+    }
+
+    // Write dynamic agent config to shared volume
+    const agentConfigDir = `${REVIEW_INPUT_PATH}/.opencode-config/opencode/agent`;
+    await mkdir(agentConfigDir, { recursive: true });
+
+    const agentConfigContent = `---
+description: >-
+  Sandboxed code review agent for grading C# WinForms student assignments.
+mode: primary
+tools:
+  read: true
+  list: true
+  glob: true
+  grep: true
+  codesearch: true
+  websearch: false
+  webfetch: false
+  write: false
+  edit: false
+  task: false
+  todowrite: false
+  todoread: false
+---
+${agentSystemPrompt}
+`;
+
+    await Bun.write(`${agentConfigDir}/code-reviewer.md`, agentConfigContent);
+
+    // Also write the opencode config.json pointing to the plugin
+    const opencodeConfigContent = {
+      plugin: ["/app/opencode-plugin"],
+      permission: {
+        external_directory: "allow"
+      },
+      "$schema": "https://opencode.ai/config.json"
+    };
+    await Bun.write(`${REVIEW_INPUT_PATH}/.opencode-config/opencode/config.json`, JSON.stringify(opencodeConfigContent, null, 2));
+
+    // Fix permissions so review container (user 1000:1000) can write
+    // Must run AFTER writing config files, using chmod because container drops CAP_CHOWN
+    const chmodProc = spawn({
+      cmd: ["chmod", "-R", "777", REVIEW_INPUT_PATH],
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await chmodProc.exited;
+
+    emitReviewOutput("Generated dynamic agent config with assignment requirements\n");
 
     // Generate unique container name
     const containerName = `review-${Date.now()}`;
@@ -536,11 +722,11 @@ Do not attempt to modify any files - only read and analyze them.`;
         "--network", "bridge",
         "--user", "1000:1000",                     // Run as non-root
         // Mount Docker named volumes (shared with main container via docker-compose)
-        "-v", "cst-150-checker_review-input:/app/project:ro",    // Project files (read-only)
+        "-v", "cst-150-checker_review-input:/app/project",       // Project files (writable for opencode config)
         "-v", "cst-150-checker_review-output:/app/review-output", // Review output
-        // Note: opencode config is baked into the review-runner image
-        // Environment
-        "-e", "XDG_CONFIG_HOME=/app/opencode-config",
+        // Dynamic agent config is written to review-input/.opencode-config
+        // Environment - point to dynamic config in project volume
+        "-e", "XDG_CONFIG_HOME=/app/project/.opencode-config",
         "-e", "XDG_DATA_HOME=/tmp/opencode-data",
         "-e", "XDG_STATE_HOME=/tmp/opencode-state",
         "-e", "XDG_CACHE_HOME=/tmp/opencode-cache",
@@ -929,6 +1115,57 @@ app.get("/api/debug/opencode", async (c) => {
     const message = error instanceof Error ? error.message : "Unknown error";
     return c.json({ error: message }, 500);
   }
+});
+
+// Debug endpoint to test review input permissions
+app.get("/api/debug/review-permissions", async (c) => {
+  const results: string[] = [];
+  const decoder = new TextDecoder();
+  
+  async function runCmd(cmd: string[], label: string): Promise<string> {
+    const proc = spawn({ cmd, stdout: "pipe", stderr: "pipe" });
+    let out = "";
+    const reader = proc.stdout.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      out += decoder.decode(value);
+    }
+    const errReader = proc.stderr.getReader();
+    while (true) {
+      const { done, value } = await errReader.read();
+      if (done) break;
+      out += decoder.decode(value);
+    }
+    await proc.exited;
+    return `${label} (exit ${proc.exitCode}):\n${out}`;
+  }
+
+  // Check current state of review-input
+  results.push(await runCmd(["ls", "-la", REVIEW_INPUT_PATH], "ls review-input"));
+  
+  // Check .opencode-config if it exists
+  const configPath = `${REVIEW_INPUT_PATH}/.opencode-config`;
+  results.push(await runCmd(["ls", "-laR", configPath], "ls opencode-config"));
+  
+  // Try chmod (chown won't work due to cap_drop: ALL)
+  results.push(await runCmd(["chmod", "-R", "777", REVIEW_INPUT_PATH], "chmod"));
+  
+  // Check again after chmod
+  results.push(await runCmd(["ls", "-la", REVIEW_INPUT_PATH], "ls after chmod"));
+  results.push(await runCmd(["ls", "-laR", configPath], "ls opencode-config after chmod"));
+  
+  // Test write as user 1000 using docker
+  const testFile = `${REVIEW_INPUT_PATH}/.opencode-config/opencode/test-write.txt`;
+  results.push(await runCmd([
+    "docker", "run", "--rm", 
+    "-v", "cst-150-checker_review-input:/app/project",
+    "--user", "1000:1000",
+    "alpine", "sh", "-c", 
+    `echo 'test' > /app/project/.opencode-config/opencode/test-write.txt && echo 'Write succeeded' || echo 'Write failed'`
+  ], "docker write test"));
+  
+  return c.text(results.join("\n\n"));
 });
 
 // Reset state
