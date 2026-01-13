@@ -17,6 +17,17 @@ cleanup() {
 # Trap signals for graceful shutdown
 trap cleanup SIGTERM SIGINT SIGHUP EXIT
 
+# Build the review runner image if it doesn't exist or Dockerfile changed
+echo "Building review runner image..."
+# Copy opencode config and plugin to review-runner build context so it can be included in the image
+cp -r /app/opencode-config /app/review-runner/opencode-config
+cp -r /app/opencode-plugin /app/review-runner/opencode-plugin
+if docker build -t cst150-review-runner:latest /app/review-runner 2>&1; then
+    echo "Review runner image built successfully"
+else
+    echo "Warning: Failed to build review runner image. Code reviews will not work."
+fi
+
 # Clean up stale lock files from previous runs
 echo "Cleaning up stale X11 lock files..."
 rm -f /tmp/.X99-lock /tmp/.X11-unix/X99

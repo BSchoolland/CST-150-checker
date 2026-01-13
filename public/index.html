@@ -16,20 +16,121 @@
             color: #eee;
             min-height: 100vh;
             display: flex;
+            flex-direction: row;
+            padding: 0;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            min-width: 260px;
+            background: #0d1421;
+            border-right: 1px solid #0f3460;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar h1 {
+            color: #00d4ff;
+            font-size: 1.3em;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .step-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .step-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            color: #555;
+            transition: all 0.3s;
+        }
+        .step-item.active {
+            background: rgba(0, 212, 255, 0.1);
+            color: #00d4ff;
+        }
+        .step-item.completed {
+            color: #0f9b0f;
+        }
+        .step-item.failed {
+            color: #e94560;
+        }
+        .step-icon {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        .step-icon .spinner-small {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #00d4ff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+        .step-icon .checkmark {
+            color: #0f9b0f;
+            font-size: 18px;
+        }
+        .step-icon .xmark {
+            color: #e94560;
+            font-size: 18px;
+        }
+        .step-icon .empty {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #333;
+        }
+        .step-name {
+            font-size: 0.95em;
+            font-weight: 500;
+        }
+        .sidebar-review-preview {
+            display: none;
+            width: 100%;
+            margin-top: 10px;
+            padding: 8px;
+            background: #0a0a15;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.7em;
+            max-height: 80px;
+            overflow: hidden;
+            color: #888;
+            line-height: 1.3;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .sidebar-review-preview.active {
+            display: block;
+        }
+        .step-item.has-preview {
+            flex-wrap: wrap;
+        }
+
+        /* Main content area */
+        .main-content {
+            flex: 1;
+            display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 30px;
+            overflow-y: auto;
         }
         .container {
             width: 100%;
-            max-width: 1100px;
-        }
-        h1 {
-            text-align: center;
-            margin-bottom: 30px;
-            color: #00d4ff;
-            font-size: 1.8em;
+            max-width: 900px;
         }
 
         /* Step container */
@@ -222,26 +323,20 @@
             to { transform: rotate(360deg); }
         }
 
-        /* Progress indicator */
-        .progress-dots {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
+        /* UI Note */
+        .ui-note {
+            background: rgba(243, 156, 18, 0.15);
+            border: 1px solid rgba(243, 156, 18, 0.4);
+            border-radius: 8px;
+            padding: 12px 16px;
             margin-bottom: 20px;
+            font-size: 0.85em;
+            color: #f39c12;
+            text-align: center;
         }
-        .progress-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #0f3460;
-            transition: all 0.3s;
-        }
-        .progress-dot.active {
-            background: #00d4ff;
-            box-shadow: 0 0 10px #00d4ff;
-        }
-        .progress-dot.completed {
-            background: #0f9b0f;
+        .ui-note strong {
+            display: block;
+            margin-bottom: 4px;
         }
 
         /* Error state */
@@ -270,19 +365,11 @@
 
         /* Review Panel */
         .review-panel {
-            background: #16213e;
-            border-radius: 12px;
-            padding: 20px;
-            border: 1px solid #0f3460;
-            margin-top: 20px;
-        }
-        .review-panel h3 {
-            color: #00d4ff;
-            font-size: 1.1em;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            background: transparent;
+            border-radius: 0;
+            padding: 0;
+            border: none;
+            margin-top: 0;
         }
         .review-summary {
             background: rgba(0, 212, 255, 0.1);
@@ -430,79 +517,102 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>CST-150 WinForms Checker</h1>
+    <!-- Sidebar with step indicators -->
+    <div class="sidebar">
+        <h1>CST-150 Checker</h1>
+        <ul class="step-list">
+            <li class="step-item active" id="sidebar-upload">
+                <span class="step-icon" id="icon-upload"><span class="empty"></span></span>
+                <span class="step-name">Upload</span>
+            </li>
+            <li class="step-item" id="sidebar-build">
+                <span class="step-icon" id="icon-build"><span class="empty"></span></span>
+                <span class="step-name">Build</span>
+            </li>
+            <li class="step-item" id="sidebar-run">
+                <span class="step-icon" id="icon-run"><span class="empty"></span></span>
+                <span class="step-name">Run & Verify</span>
+            </li>
+            <li class="step-item" id="sidebar-review">
+                <span class="step-icon" id="icon-review"><span class="empty"></span></span>
+                <span class="step-name">Code Review</span>
+                <div class="sidebar-review-preview" id="sidebarReviewPreview"></div>
+            </li>
+        </ul>
+    </div>
 
-        <!-- Progress Indicator -->
-        <div class="progress-dots">
-            <div class="progress-dot" id="dot1"></div>
-            <div class="progress-dot" id="dot2"></div>
-            <div class="progress-dot" id="dot3"></div>
-        </div>
-
-        <!-- Step 1: Upload -->
-        <div class="step active" id="step-upload">
-            <h2>Upload Your Project</h2>
-            <div class="upload-zone" id="uploadZone">
-                <input type="file" id="fileInput" accept=".zip">
-                <div class="upload-icon">&#128193;</div>
-                <p>Drag & drop your .zip file here</p>
-                <p class="subtitle">or click to browse</p>
-            </div>
-        </div>
-
-        <!-- Step 2: Building -->
-        <div class="step" id="step-build">
-            <h2>Building Project</h2>
-            <div class="build-container">
-                <div class="project-info">
-                    <span class="project-name" id="projectName">-</span>
+    <!-- Main content area -->
+    <div class="main-content">
+        <div class="container">
+            <!-- Step 1: Upload -->
+            <div class="step active" id="step-upload">
+                <h2>Upload Your Project</h2>
+                <div class="upload-zone" id="uploadZone">
+                    <input type="file" id="fileInput" accept=".zip">
+                    <div class="upload-icon">&#128193;</div>
+                    <p>Drag & drop your .zip file here</p>
+                    <p class="subtitle">or click to browse</p>
                 </div>
-                <div class="output" id="buildOutput"></div>
-                <p class="status-text building" id="buildStatus">
-                    <span class="spinner"></span>
-                    Compiling...
-                </p>
             </div>
-        </div>
 
-        <!-- Step 3: Running -->
-        <div class="step" id="step-run">
-            <h2>Application Running</h2>
-            <div class="viewer-container">
-                <div class="vnc-wrapper" id="vncWrapper">
-                    <div class="vnc-loading" id="vncLoading">Connecting to display...</div>
+            <!-- Step 2: Building -->
+            <div class="step" id="step-build">
+                <h2>Building Project</h2>
+                <div class="build-container">
+                    <div class="project-info">
+                        <span class="project-name" id="projectName">-</span>
+                    </div>
+                    <div class="output" id="buildOutput"></div>
+                    <p class="status-text building" id="buildStatus">
+                        <span class="spinner"></span>
+                        Compiling...
+                    </p>
                 </div>
-                <div class="output run-output" id="runOutput"></div>
-                <div class="actions">
-                    <button id="doneBtn">I'm Done</button>
+            </div>
+
+            <!-- Step 3: Running -->
+            <div class="step" id="step-run">
+                <h2>Verify Your Application</h2>
+                <div class="actions" style="margin-bottom: 15px;">
+                    <button id="doneBtn">Looks Good</button>
                     <button id="restartBtn" class="btn-secondary">Restart App</button>
                 </div>
-            </div>
-
-            <!-- Review Panel (shown during run step) -->
-            <div class="review-panel" id="reviewPanel">
-                <h3>
-                    <span id="reviewIcon">&#128269;</span>
-                    Code Review
-                </h3>
-                <div id="reviewContent">
-                    <div class="review-loading" id="reviewLoading">
-                        <span class="spinner"></span>
-                        AI is reviewing your code...
+                <div class="ui-note">
+                    <strong>Note:</strong> The UI may appear slightly different than expected (sizing, fonts). This is expected and okay.
+                </div>
+                <div class="viewer-container">
+                    <div class="vnc-wrapper" id="vncWrapper">
+                        <div class="vnc-loading" id="vncLoading">Connecting to display...</div>
                     </div>
+                    <div class="output run-output" id="runOutput"></div>
                 </div>
             </div>
-        </div>
 
-        <!-- Error Step -->
-        <div class="step" id="step-error">
-            <div class="error-message">
-                <h3>Something went wrong</h3>
-                <p id="errorText">An error occurred</p>
+            <!-- Step 4: Review -->
+            <div class="step" id="step-review">
+                <h2>Code Review</h2>
+                <div class="review-panel" id="reviewPanel">
+                    <div id="reviewContent">
+                        <div class="review-loading" id="reviewLoading">
+                            <span class="spinner"></span>
+                            AI is reviewing your code...
+                        </div>
+                    </div>
+                </div>
+                <div class="actions" style="margin-top: 20px;">
+                    <button id="startOverBtn">Start Over</button>
+                </div>
             </div>
-            <div class="actions" style="margin-top: 20px;">
-                <button id="retryBtn">Try Again</button>
+
+            <!-- Error Step -->
+            <div class="step" id="step-error">
+                <div class="error-message">
+                    <h3>Something went wrong</h3>
+                    <p id="errorText">An error occurred</p>
+                </div>
+                <div class="actions" style="margin-top: 20px;">
+                    <button id="retryBtn">Try Again</button>
+                </div>
             </div>
         </div>
     </div>
@@ -522,21 +632,38 @@
         const doneBtn = document.getElementById('doneBtn');
         const restartBtn = document.getElementById('restartBtn');
         const retryBtn = document.getElementById('retryBtn');
+        const startOverBtn = document.getElementById('startOverBtn');
         const errorText = document.getElementById('errorText');
 
-        // Progress dots
-        const dots = [
-            document.getElementById('dot1'),
-            document.getElementById('dot2'),
-            document.getElementById('dot3')
-        ];
+        // Sidebar elements
+        const sidebarItems = {
+            upload: document.getElementById('sidebar-upload'),
+            build: document.getElementById('sidebar-build'),
+            run: document.getElementById('sidebar-run'),
+            review: document.getElementById('sidebar-review')
+        };
+        const sidebarIcons = {
+            upload: document.getElementById('icon-upload'),
+            build: document.getElementById('icon-build'),
+            run: document.getElementById('icon-run'),
+            review: document.getElementById('icon-review')
+        };
 
         // Steps
         const steps = {
             upload: document.getElementById('step-upload'),
             build: document.getElementById('step-build'),
             run: document.getElementById('step-run'),
+            review: document.getElementById('step-review'),
             error: document.getElementById('step-error')
+        };
+
+        // Step states: 'pending', 'processing', 'completed', 'failed'
+        const stepStates = {
+            upload: 'pending',
+            build: 'pending',
+            run: 'pending',
+            review: 'pending'
         };
 
         let currentStep = 'upload';
@@ -550,28 +677,44 @@
         // Review elements
         const reviewPanel = document.getElementById('reviewPanel');
         const reviewContent = document.getElementById('reviewContent');
-        const reviewIcon = document.getElementById('reviewIcon');
         const reviewLoading = document.getElementById('reviewLoading');
+        const sidebarReviewPreview = document.getElementById('sidebarReviewPreview');
+
+        // Update sidebar icon for a step
+        function updateSidebarIcon(step, state) {
+            stepStates[step] = state;
+            const iconEl = sidebarIcons[step];
+            const itemEl = sidebarItems[step];
+
+            // Remove all state classes
+            itemEl.classList.remove('active', 'completed', 'failed');
+
+            if (state === 'processing') {
+                iconEl.innerHTML = '<span class="spinner-small"></span>';
+                itemEl.classList.add('active');
+            } else if (state === 'completed') {
+                iconEl.innerHTML = '<span class="checkmark">&#10003;</span>';
+                itemEl.classList.add('completed');
+            } else if (state === 'failed') {
+                iconEl.innerHTML = '<span class="xmark">&#10007;</span>';
+                itemEl.classList.add('failed');
+            } else {
+                // pending
+                iconEl.innerHTML = '<span class="empty"></span>';
+            }
+        }
 
         // Transition to a step
         function goToStep(stepName) {
             if (currentStep === stepName) return;
 
-            // Update progress dots
-            const stepOrder = ['upload', 'build', 'run'];
-            const stepIndex = stepOrder.indexOf(stepName);
-            dots.forEach((dot, i) => {
-                dot.classList.remove('active', 'completed');
-                if (i < stepIndex) {
-                    dot.classList.add('completed');
-                } else if (i === stepIndex) {
-                    dot.classList.add('active');
-                }
+            // Update sidebar active state
+            const stepOrder = ['upload', 'build', 'run', 'review'];
+            stepOrder.forEach(step => {
+                sidebarItems[step].classList.remove('active');
             });
-
-            // Hide error dots if showing error
-            if (stepName === 'error') {
-                dots.forEach(d => d.classList.remove('active'));
+            if (stepName !== 'error' && sidebarItems[stepName]) {
+                sidebarItems[stepName].classList.add('active');
             }
 
             // Transition out current step
@@ -617,6 +760,8 @@
                 return;
             }
 
+            updateSidebarIcon('upload', 'processing');
+
             const formData = new FormData();
             formData.append('file', file);
 
@@ -628,9 +773,12 @@
                 const data = await res.json();
 
                 if (!res.ok) {
+                    updateSidebarIcon('upload', 'failed');
                     showError(data.error || 'Upload failed');
                     return;
                 }
+
+                updateSidebarIcon('upload', 'completed');
 
                 // Update project name and transition to build
                 projectNameEl.textContent = data.project;
@@ -639,6 +787,7 @@
                 // Auto-start build
                 startBuild();
             } catch (err) {
+                updateSidebarIcon('upload', 'failed');
                 showError('Upload failed: ' + err.message);
             }
         }
@@ -647,12 +796,14 @@
             buildOutput.textContent = '';
             buildStatus.innerHTML = '<span class="spinner"></span>Compiling...';
             buildStatus.className = 'status-text building';
+            updateSidebarIcon('build', 'processing');
 
             try {
                 // Start the build (this also starts review in parallel)
                 const res = await fetch(`${API_BASE}/api/build`, { method: 'POST' });
                 if (!res.ok) {
                     const data = await res.json();
+                    updateSidebarIcon('build', 'failed');
                     showError(data.error || 'Build failed to start');
                     return;
                 }
@@ -663,6 +814,7 @@
                 // Start streaming review status
                 startReviewStream();
             } catch (err) {
+                updateSidebarIcon('build', 'failed');
                 showError('Build failed: ' + err.message);
             }
         }
@@ -685,6 +837,7 @@
 
                 const result = JSON.parse(e.data);
                 if (result.status === 'built') {
+                    updateSidebarIcon('build', 'completed');
                     buildStatus.innerHTML = 'Build successful!';
                     buildStatus.className = 'status-text';
 
@@ -693,6 +846,7 @@
                         startRun();
                     }, 500);
                 } else if (result.status === 'error') {
+                    updateSidebarIcon('build', 'failed');
                     showError(result.error || 'Build failed');
                 }
             });
@@ -708,11 +862,13 @@
         async function startRun() {
             runOutput.textContent = '';
             goToStep('run');
+            updateSidebarIcon('run', 'processing');
 
             try {
                 const res = await fetch(`${API_BASE}/api/run`, { method: 'POST' });
                 if (!res.ok) {
                     const data = await res.json();
+                    updateSidebarIcon('run', 'failed');
                     showError(data.error || 'Failed to start application');
                     return;
                 }
@@ -723,6 +879,7 @@
                 // Stream run output
                 streamRunOutput();
             } catch (err) {
+                updateSidebarIcon('run', 'failed');
                 showError('Failed to start: ' + err.message);
             }
         }
@@ -889,6 +1046,14 @@
                 outputEl.textContent = reviewOutputText;
                 outputEl.scrollTop = outputEl.scrollHeight;
             }
+            // Also update sidebar preview
+            if (reviewOutputText && stepStates.review === 'processing') {
+                const lines = reviewOutputText.trim().split('\n');
+                const lastLines = lines.slice(-4).join('\n');
+                sidebarReviewPreview.textContent = lastLines;
+                sidebarReviewPreview.classList.add('active');
+                sidebarItems.review.classList.add('has-preview');
+            }
         }
 
         async function fetchReviewStatus() {
@@ -904,8 +1069,11 @@
         function updateReviewPanel(reviewState) {
             if (reviewState.status === 'idle') {
                 reviewContent.innerHTML = '<div class="review-idle">Code review will start with the build...</div>';
-                reviewIcon.textContent = '🔍';
+                updateSidebarIcon('review', 'pending');
+                sidebarReviewPreview.classList.remove('active');
+                sidebarItems.review.classList.remove('has-preview');
             } else if (reviewState.status === 'reviewing') {
+                updateSidebarIcon('review', 'processing');
                 // Show streaming output during review
                 const outputToShow = reviewOutputText || reviewState.output || '';
                 reviewContent.innerHTML = `
@@ -915,16 +1083,28 @@
                     </div>
                     <div class="review-output" id="reviewOutputArea">${escapeHtml(outputToShow)}</div>
                 `;
-                reviewIcon.textContent = '🔍';
                 // Scroll to bottom
                 const outputEl = document.getElementById('reviewOutputArea');
                 if (outputEl) outputEl.scrollTop = outputEl.scrollHeight;
+
+                // Update sidebar preview (show last few lines)
+                if (outputToShow) {
+                    const lines = outputToShow.trim().split('\n');
+                    const lastLines = lines.slice(-4).join('\n');
+                    sidebarReviewPreview.textContent = lastLines;
+                    sidebarReviewPreview.classList.add('active');
+                    sidebarItems.review.classList.add('has-preview');
+                }
             } else if (reviewState.status === 'error') {
                 reviewContent.innerHTML = `<div class="review-error">Review failed: ${reviewState.errorMessage || 'Unknown error'}</div>`;
-                reviewIcon.textContent = '❌';
+                updateSidebarIcon('review', 'failed');
+                sidebarReviewPreview.classList.remove('active');
+                sidebarItems.review.classList.remove('has-preview');
             } else if (reviewState.status === 'completed' && reviewState.result) {
                 renderReviewResult(reviewState.result);
-                reviewIcon.textContent = '✅';
+                updateSidebarIcon('review', 'completed');
+                sidebarReviewPreview.classList.remove('active');
+                sidebarItems.review.classList.remove('has-preview');
             }
         }
 
@@ -981,6 +1161,14 @@
 
         // Button handlers
         doneBtn.addEventListener('click', async () => {
+            // User confirms the app looks good - proceed to review
+            await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
+            updateSidebarIcon('run', 'completed');
+            hideVNC();
+            goToStep('review');
+        });
+
+        startOverBtn.addEventListener('click', async () => {
             await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
             await fetch(`${API_BASE}/api/reset`, { method: 'POST' });
             hideVNC();
@@ -993,7 +1181,14 @@
                 reviewOutputEventSource = null;
             }
             reviewOutputText = '';
-            reviewContent.innerHTML = '<div class="review-idle">Code review will start with the build...</div>';
+            reviewContent.innerHTML = '<div class="review-loading"><span class="spinner"></span>AI is reviewing your code...</div>';
+            // Reset all sidebar icons and preview
+            updateSidebarIcon('upload', 'pending');
+            updateSidebarIcon('build', 'pending');
+            updateSidebarIcon('run', 'pending');
+            updateSidebarIcon('review', 'pending');
+            sidebarReviewPreview.classList.remove('active');
+            sidebarItems.review.classList.remove('has-preview');
             goToStep('upload');
             fileInput.value = '';
         });
@@ -1016,7 +1211,14 @@
                 reviewOutputEventSource = null;
             }
             reviewOutputText = '';
-            reviewContent.innerHTML = '<div class="review-idle">Code review will start with the build...</div>';
+            reviewContent.innerHTML = '<div class="review-loading"><span class="spinner"></span>AI is reviewing your code...</div>';
+            // Reset all sidebar icons and preview
+            updateSidebarIcon('upload', 'pending');
+            updateSidebarIcon('build', 'pending');
+            updateSidebarIcon('run', 'pending');
+            updateSidebarIcon('review', 'pending');
+            sidebarReviewPreview.classList.remove('active');
+            sidebarItems.review.classList.remove('has-preview');
             goToStep('upload');
             fileInput.value = '';
         });
@@ -1029,6 +1231,9 @@
 
                 if (state.status === 'running') {
                     projectNameEl.textContent = state.name;
+                    updateSidebarIcon('upload', 'completed');
+                    updateSidebarIcon('build', 'completed');
+                    updateSidebarIcon('run', 'processing');
                     goToStep('run');
                     showVNC();
                     runOutput.textContent = state.runOutput || '';
@@ -1038,12 +1243,16 @@
                     startReviewStream();
                 } else if (state.status === 'building') {
                     projectNameEl.textContent = state.name;
+                    updateSidebarIcon('upload', 'completed');
+                    updateSidebarIcon('build', 'processing');
                     goToStep('build');
                     buildOutput.textContent = state.buildOutput || '';
                     streamBuildOutput();
                     startReviewStream();
                 } else if (state.status === 'built') {
                     projectNameEl.textContent = state.name;
+                    updateSidebarIcon('upload', 'completed');
+                    updateSidebarIcon('build', 'completed');
                     goToStep('build');
                     buildOutput.textContent = state.buildOutput || '';
                     buildStatus.innerHTML = 'Build successful!';
@@ -1052,6 +1261,7 @@
                     setTimeout(() => startRun(), 500);
                 } else if (state.status === 'uploaded') {
                     projectNameEl.textContent = state.name;
+                    updateSidebarIcon('upload', 'completed');
                     goToStep('build');
                     startBuild();
                 } else if (state.status === 'error') {
@@ -1063,8 +1273,8 @@
             }
         }
 
-        // Set first dot as active on load
-        dots[0].classList.add('active');
+        // Set first step as active on load (not spinning, just highlighted)
+        sidebarItems.upload.classList.add('active');
 
         init();
     </script>

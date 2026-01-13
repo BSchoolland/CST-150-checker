@@ -426,7 +426,12 @@ async function runBuild() {
   }
 }
 
-// Background review function using opencode
+// Review container configuration
+const REVIEW_CONTAINER_IMAGE = "cst150-review-runner:latest";
+const REVIEW_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const REVIEW_INPUT_PATH = "/app/review-input";
+
+// Background review function using sandboxed sibling container
 async function runReview(projectPath: string) {
   try {
     // Clean up previous review output
@@ -435,11 +440,11 @@ async function runReview(projectPath: string) {
     } catch {
       // Ignore if file doesn't exist
     }
-    // Ensure output directory exists (use dirname to handle both relative and absolute paths)
+    // Ensure output directory exists
     const reviewDir = REVIEW_OUTPUT_PATH.substring(0, REVIEW_OUTPUT_PATH.lastIndexOf('/'));
     await mkdir(reviewDir, { recursive: true });
 
-    // Resolve to absolute path for opencode
+    // Resolve to absolute path
     const absoluteProjectPath = resolve(projectPath);
 
     reviewState = {
@@ -449,10 +454,52 @@ async function runReview(projectPath: string) {
       errorMessage: null,
     };
     emitReviewStatusChange();
-    emitReviewOutput("Starting code review...\n");
+    emitReviewOutput("Starting code review in sandboxed container...\n");
     emitReviewOutput(`Project path: ${absoluteProjectPath}\n`);
-    emitReviewOutput(`Config path: ${OPENCODE_XDG_CONFIG}\n`);
-    emitReviewOutput(`Output path: ${REVIEW_OUTPUT_PATH}\n`);
+
+    // Clean and copy project files to shared input volume
+    emitReviewOutput("Copying project files to sandbox...\n");
+    
+    // Ensure we have write permissions and clean the directories
+    const cleanInputProc = spawn({
+      cmd: ["sh", "-c", `chmod -R 777 ${REVIEW_INPUT_PATH} 2>/dev/null || true; rm -rf ${REVIEW_INPUT_PATH}/* ${REVIEW_INPUT_PATH}/.[!.]* 2>/dev/null || true`],
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await cleanInputProc.exited;
+    
+    // Also ensure review-output is writable
+    const chmodOutputProc = spawn({
+      cmd: ["sh", "-c", `chmod -R 777 ${reviewDir} 2>/dev/null || true; rm -f ${REVIEW_OUTPUT_PATH} 2>/dev/null || true`],
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await chmodOutputProc.exited;
+
+    emitReviewOutput(`Source: ${absoluteProjectPath}\n`);
+    emitReviewOutput(`Target: ${REVIEW_INPUT_PATH}\n`);
+    
+    const copyProc = spawn({
+      cmd: ["cp", "-r", `${absoluteProjectPath}/.`, REVIEW_INPUT_PATH],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    
+    const copyStderrReader = copyProc.stderr.getReader();
+    let copyStderrOutput = "";
+    try {
+      while (true) {
+        const { done, value } = await copyStderrReader.read();
+        if (done) break;
+        copyStderrOutput += new TextDecoder().decode(value);
+      }
+    } catch {}
+    
+    await copyProc.exited;
+    if (copyProc.exitCode !== 0) {
+      emitReviewOutput(`Copy error: ${copyStderrOutput}\n`);
+      throw new Error(`Failed to copy project files to sandbox: ${copyStderrOutput}`);
+    }
 
     const reviewPrompt = `Review this C# WinForms project. Analyze the code for:
 1. Code quality and naming conventions
@@ -464,29 +511,52 @@ async function runReview(projectPath: string) {
 After your analysis, you MUST use the submit_review tool to provide your structured feedback.
 Do not attempt to modify any files - only read and analyze them.`;
 
-    // Run opencode with sandboxed configuration
-    // Note: opencode must be run FROM the project directory, not with path as argument
+    // Generate unique container name
+    const containerName = `review-${Date.now()}`;
+
+    // Run opencode in sandboxed sibling container with strict resource limits
+    emitReviewOutput(`Spawning review container: ${containerName}\n`);
     const reviewProc = spawn({
       cmd: [
-        "opencode",
-        "run",
+        "docker", "run",
+        "--name", containerName,
+        "--rm",                                    // Auto-remove on exit
+        // Resource limits (DoS prevention)
+        "--pids-limit", "256",                     // Prevent fork bombs
+        "--memory", "1g",                          // Memory limit
+        "--memory-swap", "1g",                     // No swap
+        "--cpus", "2",                             // CPU limit
+        "--ulimit", "nproc=4096:4096",             // Process limit
+        "--ulimit", "nofile=4096:4096",            // File descriptor limit
+        // Security hardening (escape prevention)
+        "--security-opt", "no-new-privileges",    // Block privilege escalation
+        "--cap-drop", "ALL",                       // Drop all capabilities
+        "--tmpfs", "/tmp:size=256m,mode=1777",    // Limited writable temp
+        // Network enabled for LLM API access (opencode needs to call the model)
+        "--network", "bridge",
+        "--user", "1000:1000",                     // Run as non-root
+        // Mount Docker named volumes (shared with main container via docker-compose)
+        "-v", "cst-150-checker_review-input:/app/project:ro",    // Project files (read-only)
+        "-v", "cst-150-checker_review-output:/app/review-output", // Review output
+        // Note: opencode config is baked into the review-runner image
+        // Environment
+        "-e", "XDG_CONFIG_HOME=/app/opencode-config",
+        "-e", "XDG_DATA_HOME=/tmp/opencode-data",
+        "-e", "XDG_STATE_HOME=/tmp/opencode-state",
+        "-e", "XDG_CACHE_HOME=/tmp/opencode-cache",
+        "-e", "REVIEW_OUTPUT_PATH=/app/review-output/review.json",
+        "-e", "CI=true",
+        "-e", "HOME=/home/reviewer",
+        "-e", "PATH=/home/reviewer/.opencode/bin:/home/reviewer/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        // Working directory
+        "-w", "/app/project",
+        // Image and command
+        REVIEW_CONTAINER_IMAGE,
+        "/home/reviewer/.opencode/bin/opencode", "run",
         "--agent", "code-reviewer",
         "--format", "json",
         reviewPrompt,
       ],
-      cwd: absoluteProjectPath,
-      env: {
-        ...process.env,
-        // Use XDG directories for isolated config (security: prevents access to system config)
-        XDG_CONFIG_HOME: OPENCODE_XDG_CONFIG,
-        XDG_DATA_HOME: "/tmp/opencode-data",
-        XDG_STATE_HOME: "/tmp/opencode-state",
-        XDG_CACHE_HOME: "/tmp/opencode-cache",
-        // Plugin output path
-        REVIEW_OUTPUT_PATH: REVIEW_OUTPUT_PATH,
-        // Ensure no interactive prompts
-        CI: "true",
-      },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -513,10 +583,32 @@ Do not attempt to modify any files - only read and analyze them.`;
       }
     })();
 
-    await reviewProc.exited;
-    const exitCode = reviewProc.exitCode;
+    // Wait with timeout
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        // Kill the container if it times out
+        spawn({ cmd: ["docker", "kill", containerName], stdout: "ignore", stderr: "ignore" });
+        reject(new Error(`Review timed out after ${REVIEW_TIMEOUT_MS / 1000} seconds`));
+      }, REVIEW_TIMEOUT_MS);
+    });
+
+    let exitCode: number | null = null;
+    try {
+      await Promise.race([reviewProc.exited, timeoutPromise]);
+      exitCode = reviewProc.exitCode;
+    } catch (timeoutError) {
+      emitReviewOutput(`\nReview timed out!\n`);
+      reviewState = {
+        status: "error",
+        result: null,
+        output: reviewState.output,
+        errorMessage: "Review timed out after 5 minutes",
+      };
+      emitReviewStatusChange();
+      return;
+    }
     
-    emitReviewOutput(`\nOpencode exited with code: ${exitCode}\n`);
+    emitReviewOutput(`\nReview container exited with code: ${exitCode}\n`);
     emitReviewOutput(`Looking for review at: ${REVIEW_OUTPUT_PATH}\n`);
 
     // Check if review was produced
@@ -544,12 +636,10 @@ Do not attempt to modify any files - only read and analyze them.`;
         emitReviewStatusChange();
       }
     } else {
-      // Include more diagnostic info in the error
       const errorDetails = [
         `Exit code: ${exitCode}`,
         `Expected output at: ${REVIEW_OUTPUT_PATH}`,
-        `XDG_CONFIG_HOME: ${OPENCODE_XDG_CONFIG}`,
-        `Check review output stream for opencode errors`,
+        `Check review output stream for container errors`,
       ].join("; ");
       
       emitReviewOutput(`\nReview file not found. ${errorDetails}\n`);

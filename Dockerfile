@@ -19,6 +19,12 @@ RUN apt-get update && apt-get install -y \
     openbox \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Docker CLI (for spawning sibling containers)
+RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg && \
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu jammy stable" > /etc/apt/sources.list.d/docker.list && \
+    apt-get update && apt-get install -y docker-ce-cli && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install latest noVNC from GitHub (apt version is outdated 1.2.0)
 RUN git clone --depth 1 --branch v1.6.0 https://github.com/novnc/noVNC.git /usr/share/novnc && \
     ln -s /usr/share/novnc/vnc.html /usr/share/novnc/index.html
@@ -81,7 +87,7 @@ RUN mkdir -p /opt/wine-dotnet/drive_c/dotnet /tmp/dotnet-setup && \
     rm -rf /tmp/dotnet-setup
 
 # Create working directories
-RUN mkdir -p /app/uploads /app/projects /app/logs /app/review-output
+RUN mkdir -p /app/uploads /app/projects /app/logs /app/review-output /app/review-input
 
 # Install opencode (sandboxed code review agent)
 # Using the official installer which downloads the latest binary
@@ -106,10 +112,14 @@ COPY package.json /app/
 COPY src/ /app/src/
 COPY public/ /app/public/
 COPY openbox-rc.xml /app/openbox-rc.xml
+COPY example-projects/ /app/example-projects/
 
 # Copy opencode plugin and configuration
 COPY opencode-plugin/ /app/opencode-plugin/
 COPY opencode-config/ /app/opencode-config/
+
+# Copy review runner Dockerfile (built at runtime via docker.sock)
+COPY review-runner/ /app/review-runner/
 
 WORKDIR /app
 
@@ -125,6 +135,9 @@ WORKDIR /app/opencode-config/opencode
 RUN bun install
 
 WORKDIR /app
+
+# Make config writable for review container (runs as uid 1000)
+RUN chmod -R 777 /app/opencode-config
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh

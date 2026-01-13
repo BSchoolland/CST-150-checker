@@ -9,6 +9,9 @@ services:
     volumes:
       - ./uploads:/app/uploads
       - ./projects:/app/projects
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # For spawning review containers
+      - review-input:/app/review-input    # Shared volume for project files
+      - review-output:/app/review-output  # Shared volume for review results
     environment:
       - DISPLAY=:99
       - WINEPREFIX=/opt/wine-dotnet
@@ -22,3 +25,7 @@ services:
       - SYS_CHROOT  # Needed for Wine
     mem_limit: 4g
     cpus: 4.0
+
+volumes:
+  review-input:
+  review-output:
