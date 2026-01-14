@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <desktops>
+    <number>1</number>
+    <firstdesk>1</firstdesk>
+    <popupTime>0</popupTime>
+  </desktops>
+  <mouse>
+    <context name="Desktop">
+      <!-- Disable scroll wheel workspace switching -->
+    </context>
+    <context name="Root">
+      <!-- Disable scroll wheel workspace switching -->
+    </context>
+  </mouse>
+  <keyboard/>
+  <applications/>
+</openbox_config>

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "Starting WinForms Checker Container..."
+echo "Starting CST-150 Checker Orchestrator..."
 
 # Ensure mounted directories are writable
 chmod -R 777 /app/uploads /app/projects 2>/dev/null || true
@@ -9,10 +9,9 @@ chmod -R 777 /app/uploads /app/projects 2>/dev/null || true
 # Cleanup function for graceful shutdown
 cleanup() {
     echo "Shutting down..."
-    pkill -f "Xvfb :99" 2>/dev/null || true
-    pkill -f "x11vnc" 2>/dev/null || true
-    pkill -f "websockify" 2>/dev/null || true
-    rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
+    # Kill any session containers we spawned
+    docker ps -q --filter "name=session-" | xargs -r docker kill 2>/dev/null || true
+    docker ps -aq --filter "name=session-" | xargs -r docker rm -f 2>/dev/null || true
     echo "Cleanup complete"
     exit 0
 }
@@ -31,32 +30,18 @@ else
     echo "Warning: Failed to build review runner image. Code reviews will not work."
 fi
 
-# Clean up stale lock files from previous runs
-echo "Cleaning up stale X11 lock files..."
-rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
-
-# Start Xvfb (virtual framebuffer)
-echo "Starting Xvfb on display :99..."
-Xvfb :99 -screen 0 800x600x24 &
-sleep 2
-
-# Start openbox window manager (handles expose events for proper repaints)
-echo "Starting openbox window manager..."
-DISPLAY=:99 openbox --config-file /app/openbox-rc.xml &
-sleep 1
-
-# Start x11vnc
-echo "Starting x11vnc..."
-x11vnc -display :99 -nopw -listen 0.0.0.0 -xkb -forever -shared -bg
-
-# Start websockify for noVNC
-echo "Starting websockify on port 6080..."
-websockify --web=/usr/share/novnc/ 6080 localhost:5900 &
+# Build the session runner image
+echo "Building session runner image..."
+if docker build -t cst150-session-runner:latest /app/session-runner 2>&1; then
+    echo "Session runner image built successfully"
+else
+    echo "ERROR: Failed to build session runner image. Sessions will not work!"
+    # Continue anyway - might be a cached image available
+fi
 
 echo "Container ready!"
-echo "VNC available on port 5900"
-echo "noVNC web interface available on port 6080"
 echo "API server starting on port 3000..."
+echo "Session VNC ports: 6081, 6082, 6083"
 
 # Start the Bun server
 cd /app

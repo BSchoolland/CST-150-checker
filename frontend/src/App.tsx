@@ -1,10 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { AssignmentSelect } from "@/components/steps/AssignmentSelect";
 import { UploadStep } from "@/components/steps/UploadStep";
 import { BuildStep } from "@/components/steps/BuildStep";
 import { RunStep } from "@/components/steps/RunStep";
 import { ReviewStep } from "@/components/steps/ReviewStep";
+import { QueueDisplay } from "@/components/QueueDisplay";
+import { SessionInitializing } from "@/components/SessionInitializing";
+import { SessionError } from "@/components/SessionError";
 import { useWorkflow } from "@/hooks/useWorkflow";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -62,7 +65,16 @@ function WorkflowPage() {
 
 function App() {
   const {
+    sessionState,
+    sessionId,
+    queuePosition,
+    sessionError,
     currentPage,
+    setSessionState,
+    setSessionId,
+    setVncPort,
+    setQueuePosition,
+    setSessionError,
     setAssignments,
     selectAssignment,
     goToPage,
@@ -73,78 +85,170 @@ function App() {
     appendRunOutput,
   } = useWorkflow();
 
-  // Initialize - check current status on load
-  useEffect(() => {
-    const init = async () => {
-      try {
-        // Load assignments
-        const assignments = await api.getAssignmentParts();
-        setAssignments(assignments);
-
-        // Check current server state
-        const status = await api.getStatus();
-
-        // Helper to restore common state when resuming workflow
-        const resumeWorkflow = () => {
-          goToPage("workflow");
-          if (status.name) setProjectName(status.name);
-          if (status.selectedAssignmentPartId) {
-            selectAssignment(status.selectedAssignmentPartId);
-          }
-        };
-
-        if (status.status === "running") {
-          resumeWorkflow();
-          setStepStatus("upload", "completed");
-          setStepStatus("build", "completed");
-          setStepStatus("run", "processing");
-          goToStep("run");
-          if (status.runOutput) appendRunOutput(status.runOutput);
-        } else if (status.status === "building") {
-          resumeWorkflow();
-          setStepStatus("upload", "completed");
-          setStepStatus("build", "processing");
-          goToStep("build");
-          if (status.buildOutput) appendBuildOutput(status.buildOutput);
-        } else if (status.status === "built") {
-          resumeWorkflow();
-          setStepStatus("upload", "completed");
-          setStepStatus("build", "completed");
-          goToStep("run");
-        } else if (status.status === "uploaded") {
-          resumeWorkflow();
-          setStepStatus("upload", "completed");
-          goToStep("build");
-        } else if (status.status === "error") {
-          resumeWorkflow();
-          if (status.errorStep === "build") {
-            setStepStatus("upload", "completed");
-            setStepStatus("build", "failed");
-            goToStep("build");
-          } else if (status.errorStep === "run") {
-            setStepStatus("upload", "completed");
-            setStepStatus("build", "completed");
-            setStepStatus("run", "failed");
-            goToStep("run");
-          }
+  // Initialize session
+  const initSession = useCallback(async () => {
+    setSessionState('initializing');
+    
+    try {
+      // Acquire session
+      const result = await api.acquireSession();
+      
+      if (result.status === 'queued') {
+        setSessionState('queued');
+        setSessionId(result.sessionId);
+        setQueuePosition(result.queuePosition!);
+        
+        // Start polling for queue updates
+        pollQueueStatus(result.sessionId);
+      } else {
+        setSessionState('active');
+        setSessionId(result.sessionId);
+        if (result.vncPort) {
+          setVncPort(result.vncPort);
+          api.setVncPort(result.vncPort);
         }
-        // Otherwise stay on select page
-      } catch (err) {
-        console.error("Init failed:", err);
+        
+        // Load assignments
+        await loadAssignments();
       }
-    };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to acquire session';
+      setSessionError(message);
+    }
+  }, [setSessionState, setSessionId, setVncPort, setQueuePosition, setSessionError]);
 
-    init();
-  }, [
-    setAssignments,
-    selectAssignment,
-    goToPage,
-    goToStep,
-    setStepStatus,
-    setProjectName,
-    appendBuildOutput,
-    appendRunOutput,
-  ]);
+  // Poll for queue status updates
+  const pollQueueStatus = useCallback(async (sessionIdToPoll: string) => {
+    try {
+      const status = await api.getSessionStatus();
+      
+      if (status.status === 'queued') {
+        setQueuePosition(status.queuePosition || 0);
+        // Continue polling
+        setTimeout(() => pollQueueStatus(sessionIdToPoll), 3000);
+      } else {
+        // Promoted!
+        setSessionState('active');
+        if (status.vncPort) {
+          setVncPort(status.vncPort);
+          api.setVncPort(status.vncPort);
+        }
+        await loadAssignments();
+      }
+    } catch (err) {
+      // Session might have been released, retry init
+      initSession();
+    }
+  }, [setSessionState, setVncPort, setQueuePosition, initSession]);
+
+  // Load assignments
+  const loadAssignments = async () => {
+    try {
+      const assignments = await api.getAssignmentParts();
+      setAssignments(assignments);
+      
+      // Check current server state for session restoration
+      const status = await api.getSessionStatus();
+      
+      if (status.status !== 'pending' && status.status !== 'ready') {
+        restoreWorkflowState(status);
+      }
+    } catch (err) {
+      console.error("Failed to load assignments:", err);
+    }
+  };
+
+  // Restore workflow state from session status
+  const restoreWorkflowState = (status: Awaited<ReturnType<typeof api.getSessionStatus>>) => {
+    goToPage("workflow");
+    if (status.projectName) setProjectName(status.projectName);
+    if (status.selectedAssignmentPartId) {
+      selectAssignment(status.selectedAssignmentPartId);
+    }
+
+    if (status.status === "running") {
+      setStepStatus("upload", "completed");
+      setStepStatus("build", "completed");
+      setStepStatus("run", "processing");
+      goToStep("run");
+      if (status.runOutput) appendRunOutput(status.runOutput);
+    } else if (status.status === "building") {
+      setStepStatus("upload", "completed");
+      setStepStatus("build", "processing");
+      goToStep("build");
+      if (status.buildOutput) appendBuildOutput(status.buildOutput);
+    } else if (status.status === "built") {
+      setStepStatus("upload", "completed");
+      setStepStatus("build", "completed");
+      goToStep("run");
+    } else if (status.status === "ready" && status.projectName) {
+      setStepStatus("upload", "completed");
+      goToStep("build");
+    } else if (status.status === "error") {
+      // Handle error state
+      setStepStatus("upload", "completed");
+      goToStep("build");
+    }
+  };
+
+  // Initialize on mount
+  useEffect(() => {
+    initSession();
+    
+    // Cleanup on unmount / page close
+    return () => {
+      api.releaseSession();
+    };
+  }, [initSession]);
+
+  // Heartbeat interval
+  useEffect(() => {
+    if (sessionState !== 'active') return;
+    
+    const interval = setInterval(() => {
+      api.heartbeat();
+    }, 10_000);
+    
+    return () => clearInterval(interval);
+  }, [sessionState]);
+
+  // Handle page unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      api.releaseSession();
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [sessionId]);
+
+  // Render based on session state
+  if (sessionState === 'initializing') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900">
+        <SessionInitializing />
+      </div>
+    );
+  }
+
+  if (sessionState === 'queued') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900">
+        <QueueDisplay position={queuePosition} />
+      </div>
+    );
+  }
+
+  if (sessionState === 'error') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900">
+        <SessionError 
+          error={sessionError || 'Unknown error'} 
+          onRetry={initSession}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900">

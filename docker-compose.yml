@@ -5,26 +5,25 @@ services:
     build: .
     ports:
       - "3000:3000"   # API
-      - "6080:6080"   # noVNC web interface
+      # VNC ports for up to 3 concurrent sessions
+      - "6081:6081"
+      - "6082:6082"
+      - "6083:6083"
     volumes:
       - ./uploads:/app/uploads
       - ./projects:/app/projects
-      - /var/run/docker.sock:/var/run/docker.sock:ro  # For spawning review containers
-      - review-input:/app/review-input    # Shared volume for project files
+      - /var/run/docker.sock:/var/run/docker.sock  # For spawning session containers (rw needed)
+      - review-input:/app/review-input    # Shared volume for project files (review)
       - review-output:/app/review-output  # Shared volume for review results
     environment:
       - DISPLAY=:99
-      - WINEPREFIX=/opt/wine-dotnet
-      - WINEDEBUG=-all
-    # Security settings
+    # Security settings - main container is orchestrator only (no Wine)
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    cap_add:
-      - SYS_CHROOT  # Needed for Wine
-    mem_limit: 4g
-    cpus: 4.0
+    mem_limit: 2g
+    cpus: 2.0
 
 volumes:
   review-input:

@@ -4,7 +4,21 @@ import type { AssignmentPart, ReviewResult, ReviewStatus } from '@/lib/api';
 export type WorkflowStep = 'select' | 'upload' | 'build' | 'run' | 'review';
 export type StepStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'warning';
 
+// Session states
+export type SessionState = 
+  | 'initializing'  // Acquiring session
+  | 'queued'        // In queue waiting for slot
+  | 'active'        // Session active
+  | 'error';        // Failed to acquire session
+
 interface WorkflowState {
+  // Session state
+  sessionState: SessionState;
+  sessionId: string | null;
+  vncPort: number | null;
+  queuePosition: number;
+  sessionError: string | null;
+  
   // Current page and step
   currentPage: 'select' | 'workflow';
   currentStep: WorkflowStep;
@@ -32,7 +46,14 @@ interface WorkflowState {
   error: string | null;
   errorStep: WorkflowStep | null;
   
-  // Actions
+  // Session actions
+  setSessionState: (state: SessionState) => void;
+  setSessionId: (id: string) => void;
+  setVncPort: (port: number) => void;
+  setQueuePosition: (position: number) => void;
+  setSessionError: (error: string) => void;
+  
+  // Workflow actions
   setAssignments: (assignments: AssignmentPart[]) => void;
   selectAssignment: (id: number) => void;
   setProjectName: (name: string) => void;
@@ -59,6 +80,14 @@ const initialStepStatuses: Record<WorkflowStep, StepStatus> = {
 };
 
 export const useWorkflow = create<WorkflowState>((set, get) => ({
+  // Session state
+  sessionState: 'initializing',
+  sessionId: null,
+  vncPort: null,
+  queuePosition: 0,
+  sessionError: null,
+  
+  // Workflow state
   currentPage: 'select',
   currentStep: 'upload',
   stepStatuses: { ...initialStepStatuses },
@@ -73,6 +102,14 @@ export const useWorkflow = create<WorkflowState>((set, get) => ({
   error: null,
   errorStep: null,
 
+  // Session actions
+  setSessionState: (sessionState) => set({ sessionState }),
+  setSessionId: (sessionId) => set({ sessionId }),
+  setVncPort: (vncPort) => set({ vncPort }),
+  setQueuePosition: (queuePosition) => set({ queuePosition }),
+  setSessionError: (sessionError) => set({ sessionError, sessionState: 'error' }),
+
+  // Workflow actions
   setAssignments: (assignments) => set({ assignments }),
 
   selectAssignment: (id) => set({ 
@@ -146,5 +183,6 @@ export const useWorkflow = create<WorkflowState>((set, get) => ({
     reviewResult: null,
     error: null,
     errorStep: null,
+    // Note: Don't reset session state - keep the session alive
   }),
 }));

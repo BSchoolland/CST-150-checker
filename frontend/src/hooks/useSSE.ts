@@ -48,6 +48,10 @@ export function useSSE(url: string | null, options: UseSSEOptions = {}) {
     eventSource.addEventListener('output', handleMessage);
     eventSource.addEventListener('complete', handleMessage);
     eventSource.addEventListener('review-status', handleMessage);
+    eventSource.addEventListener('status', handleMessage);
+    eventSource.addEventListener('promoted', handleMessage);
+    eventSource.addEventListener('queue-update', handleMessage);
+    eventSource.addEventListener('error', handleMessage);
     eventSource.addEventListener('message', handleMessage);
 
     return () => {

@@ -14,7 +14,6 @@ import { PositivesList } from "@/components/review/PositivesList";
 import {
   FileSearch,
   Terminal,
-  RotateCcw,
   FileCheck,
   AlertTriangle,
   ListChecks,
