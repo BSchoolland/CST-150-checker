@@ -130,9 +130,33 @@ await mkdir(PROJECTS_DIR, { recursive: true });
 
 app.use("/*", cors());
 
-// Serve static files from public directory
-app.use("/static/*", serveStatic({ root: "./" }));
-app.get("/", serveStatic({ path: "./public/index.html" }));
+// Serve static files - check for built frontend first, fallback to old public directory
+const frontendDistPath = "./frontend/dist";
+const useFrontendBuild = existsSync(frontendDistPath);
+
+if (useFrontendBuild) {
+  // Serve built React frontend
+  app.use("/assets/*", serveStatic({ root: frontendDistPath }));
+  app.get("/", serveStatic({ path: `${frontendDistPath}/index.html` }));
+  // Fallback for SPA routing - serve index.html for all non-API routes
+  app.use("*", async (c, next) => {
+    // Skip API routes
+    if (c.req.path.startsWith("/api")) {
+      return next();
+    }
+    // Serve index.html for client-side routing
+    const indexPath = resolve(frontendDistPath, "index.html");
+    if (existsSync(indexPath)) {
+      const html = await Bun.file(indexPath).text();
+      return c.html(html);
+    }
+    return next();
+  });
+} else {
+  // Fallback to old public directory (legacy)
+  app.use("/static/*", serveStatic({ root: "./" }));
+  app.get("/", serveStatic({ path: "./public/index.html" }));
+}
 
 // Get current status
 app.get("/api/status", (c) => {

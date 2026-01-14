@@ -132,6 +132,15 @@ COPY src/ /app/src/
 COPY public/ /app/public/
 COPY openbox-rc.xml /app/openbox-rc.xml
 
+# Copy and build frontend
+COPY frontend/package.json frontend/package-lock.json* /app/frontend/
+WORKDIR /app/frontend
+RUN bun install
+
+# Copy frontend source and build
+COPY frontend/ /app/frontend/
+RUN bun run build
+
 # Create example-projects directory
 RUN mkdir -p /app/example-projects
 
