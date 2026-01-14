@@ -42,6 +42,12 @@ export function ReviewStep() {
         try {
           const status: ReviewStatus = JSON.parse(data);
           setReviewStatus(status.status);
+          
+          // Set step status to processing when review starts
+          if (status.status === "reviewing") {
+            setStepStatus("review", "processing");
+          }
+          
           if (status.result) {
             setReviewResult(status.result);
             // Update step status based on score
@@ -89,11 +95,14 @@ export function ReviewStep() {
   useEffect(() => {
     api.getReviewStatus().then((status) => {
       setReviewStatus(status.status);
+      if (status.status === "reviewing") {
+        setStepStatus("review", "processing");
+      }
       if (status.result) {
         setReviewResult(status.result);
       }
     });
-  }, [setReviewStatus, setReviewResult]);
+  }, [setReviewStatus, setReviewResult, setStepStatus]);
 
   // Auto-scroll output
   useEffect(() => {
@@ -102,7 +111,7 @@ export function ReviewStep() {
     }
   }, [reviewOutput]);
 
-  const handleStartOver = async () => {
+  const handleDone = async () => {
     await api.stop();
     await api.reset();
     reset();
@@ -141,16 +150,16 @@ export function ReviewStep() {
                 <CardTitle className="text-lg text-white">Code Review</CardTitle>
                 <p className="text-sm text-slate-400">
                   {isReviewing
-                    ? "AI is analyzing your code..."
+                    ? "Agent is analyzing your code..."
                     : isCompleted
                       ? "Review complete"
                       : "Waiting for review..."}
                 </p>
               </div>
             </div>
-            <Button onClick={handleStartOver} variant="outline" className="gap-2">
-              <RotateCcw className="w-4 h-4" />
-              Start Over
+            <Button onClick={handleDone} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
+              <FileCheck className="w-4 h-4" />
+              Done!
             </Button>
           </div>
         </CardHeader>
@@ -165,18 +174,14 @@ export function ReviewStep() {
 
           {isReviewing && (
             <div className="space-y-4">
-              <div className="flex items-center gap-2 text-sm text-violet-400">
-                <Spinner size="sm" className="border-violet-500" />
-                <span>Agent is analyzing your code...</span>
-              </div>
-              <div className="relative">
-                <div className="absolute top-3 left-3 flex items-center gap-2 text-xs text-slate-500">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
                   <Terminal className="w-3 h-3" />
                   <span>Agent Activity</span>
                 </div>
                 <pre
                   ref={outputRef}
-                  className="terminal-output h-64 pt-10"
+                  className="terminal-output h-64"
                 >
                   {reviewOutput || "Starting review..."}
                 </pre>
@@ -207,14 +212,29 @@ export function ReviewStep() {
                   <TabsTrigger value="requirements" className="gap-2">
                     <ListChecks className="w-4 h-4" />
                     Requirements
+                    {(reviewResult.requirementResults?.length ?? 0) > 0 && (
+                      <span className="ml-1 text-xs opacity-70">
+                        ({reviewResult.requirementResults?.length})
+                      </span>
+                    )}
                   </TabsTrigger>
                   <TabsTrigger value="issues" className="gap-2">
                     <AlertTriangle className="w-4 h-4" />
                     Issues
+                    {(reviewResult.issues?.length ?? 0) > 0 && (
+                      <span className="ml-1 text-xs opacity-70">
+                        ({reviewResult.issues?.length})
+                      </span>
+                    )}
                   </TabsTrigger>
                   <TabsTrigger value="positives" className="gap-2">
                     <FileCheck className="w-4 h-4" />
                     Positives
+                    {(reviewResult.positives?.length ?? 0) > 0 && (
+                      <span className="ml-1 text-xs opacity-70">
+                        ({reviewResult.positives?.length})
+                      </span>
+                    )}
                   </TabsTrigger>
                 </TabsList>
 

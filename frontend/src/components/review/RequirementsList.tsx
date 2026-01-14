@@ -88,9 +88,7 @@ export function RequirementsList({ requirements }: RequirementsListProps) {
                   {req.requirement}
                 </span>
                 <StatusBadge status={req.status} />
-                <span className="text-xs text-slate-500 w-12 text-right">
-                  {req.points} pts
-                </span>
+                
               </div>
             </AccordionTrigger>
             <AccordionContent className="pb-3">

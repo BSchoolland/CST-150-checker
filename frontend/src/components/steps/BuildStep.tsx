@@ -23,11 +23,12 @@ export function BuildStep() {
   const outputRef = useRef<HTMLPreElement>(null);
   const hasStartedBuild = useRef(false);
 
-  // Start the build when entering this step
+  // Start the build only once when upload is completed and build is pending
   useEffect(() => {
     if (
-      stepStatuses.build === "pending" ||
-      (stepStatuses.upload === "completed" && !hasStartedBuild.current)
+      stepStatuses.upload === "completed" &&
+      stepStatuses.build === "pending" &&
+      !hasStartedBuild.current
     ) {
       hasStartedBuild.current = true;
       setStepStatus("build", "processing");
@@ -130,15 +131,15 @@ export function BuildStep() {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Terminal output */}
-        <div className="relative">
-          <div className="absolute top-3 left-3 flex items-center gap-2 text-xs text-slate-500">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-xs text-slate-500">
             <Terminal className="w-3 h-3" />
             <span>Build Output</span>
           </div>
           <pre
             ref={outputRef}
             className={cn(
-              "terminal-output h-80 pt-10",
+              "terminal-output h-80",
               isFailed && "border border-rose-500/20"
             )}
           >

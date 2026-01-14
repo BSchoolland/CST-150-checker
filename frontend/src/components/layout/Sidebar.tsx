@@ -27,7 +27,7 @@ const stepConfig: Array<{
 function StepIcon({ status }: { status: StepStatus }) {
   switch (status) {
     case "processing":
-      return <Spinner size="sm" />;
+      return <Spinner size="sm" variant="warning" />;
     case "completed":
       return <Check className="h-4 w-4 text-emerald-400" />;
     case "failed":

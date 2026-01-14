@@ -41,18 +41,18 @@ function WorkflowPage() {
             </div>
           )}
 
-          {/* Step content */}
-          <div
-            className={cn(
-              "transition-all duration-300",
-              "animate-in fade-in slide-in-from-bottom-4"
-            )}
-            key={currentStep}
-          >
-            {currentStep === "upload" && <UploadStep />}
-            {currentStep === "build" && <BuildStep />}
-            {currentStep === "run" && <RunStep />}
-            {currentStep === "review" && <ReviewStep />}
+          {/* Step content - all steps stay rendered but hidden to preserve state */}
+          <div className={cn(currentStep !== "upload" && "hidden")}>
+            <UploadStep />
+          </div>
+          <div className={cn(currentStep !== "build" && "hidden")}>
+            <BuildStep />
+          </div>
+          <div className={cn(currentStep !== "run" && "hidden")}>
+            <RunStep />
+          </div>
+          <div className={cn(currentStep !== "review" && "hidden")}>
+            <ReviewStep />
           </div>
         </div>
       </main>
@@ -64,6 +64,7 @@ function App() {
   const {
     currentPage,
     setAssignments,
+    selectAssignment,
     goToPage,
     goToStep,
     setStepStatus,
@@ -83,35 +84,39 @@ function App() {
         // Check current server state
         const status = await api.getStatus();
 
-        if (status.status === "running") {
+        // Helper to restore common state when resuming workflow
+        const resumeWorkflow = () => {
           goToPage("workflow");
           if (status.name) setProjectName(status.name);
+          if (status.selectedAssignmentPartId) {
+            selectAssignment(status.selectedAssignmentPartId);
+          }
+        };
+
+        if (status.status === "running") {
+          resumeWorkflow();
           setStepStatus("upload", "completed");
           setStepStatus("build", "completed");
           setStepStatus("run", "processing");
           goToStep("run");
           if (status.runOutput) appendRunOutput(status.runOutput);
         } else if (status.status === "building") {
-          goToPage("workflow");
-          if (status.name) setProjectName(status.name);
+          resumeWorkflow();
           setStepStatus("upload", "completed");
           setStepStatus("build", "processing");
           goToStep("build");
           if (status.buildOutput) appendBuildOutput(status.buildOutput);
         } else if (status.status === "built") {
-          goToPage("workflow");
-          if (status.name) setProjectName(status.name);
+          resumeWorkflow();
           setStepStatus("upload", "completed");
           setStepStatus("build", "completed");
           goToStep("run");
         } else if (status.status === "uploaded") {
-          goToPage("workflow");
-          if (status.name) setProjectName(status.name);
+          resumeWorkflow();
           setStepStatus("upload", "completed");
           goToStep("build");
         } else if (status.status === "error") {
-          goToPage("workflow");
-          if (status.name) setProjectName(status.name);
+          resumeWorkflow();
           if (status.errorStep === "build") {
             setStepStatus("upload", "completed");
             setStepStatus("build", "failed");
@@ -132,6 +137,7 @@ function App() {
     init();
   }, [
     setAssignments,
+    selectAssignment,
     goToPage,
     goToStep,
     setStepStatus,

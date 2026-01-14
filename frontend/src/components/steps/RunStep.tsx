@@ -27,9 +27,12 @@ export function RunStep() {
 
   const outputRef = useRef<HTMLPreElement>(null);
   const hasStartedRun = useRef(false);
-  const [showVnc, setShowVnc] = useState(false);
+  const [viewerLoaded, setViewerLoaded] = useState(false);
 
-  // Start the run when entering this step
+  // Track if we should show VNC - show it once we're processing or completed
+  const showVnc = stepStatuses.run === "processing" || stepStatuses.run === "completed" || stepStatuses.run === "warning";
+
+  // Start the run only once when build is completed and run is pending
   useEffect(() => {
     if (
       stepStatuses.build === "completed" &&
@@ -39,14 +42,9 @@ export function RunStep() {
       hasStartedRun.current = true;
       setStepStatus("run", "processing");
       clearError();
-      api
-        .startRun()
-        .then(() => {
-          setShowVnc(true);
-        })
-        .catch((err) => {
-          setError(err.message, "run");
-        });
+      api.startRun().catch((err) => {
+        setError(err.message, "run");
+      });
     }
   }, [stepStatuses.build, stepStatuses.run, setStepStatus, setError, clearError]);
 
@@ -75,28 +73,22 @@ export function RunStep() {
   const isFailed = status === "failed";
 
   const handleDone = async () => {
-    await api.stop();
     setStepStatus("run", "completed");
     goToStep("review");
   };
 
   const handleRestart = async () => {
     await api.stop();
-    setShowVnc(false);
     hasStartedRun.current = false;
     setStepStatus("run", "pending");
     clearError();
     // Trigger re-run
     setTimeout(() => {
+      hasStartedRun.current = true;
       setStepStatus("run", "processing");
-      api
-        .startRun()
-        .then(() => {
-          setShowVnc(true);
-        })
-        .catch((err) => {
-          setError(err.message, "run");
-        });
+      api.startRun().catch((err) => {
+        setError(err.message, "run");
+      });
     }, 100);
   };
 
@@ -137,7 +129,13 @@ export function RunStep() {
             </div>
             {!isFailed && (
               <div className="flex items-center gap-2">
-                <Button onClick={handleDone} className="gap-2">
+                <Button 
+                  onClick={handleDone} 
+                  className={cn(
+                    "gap-2",
+                    viewerLoaded && "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  )}
+                >
                   <Check className="w-4 h-4" />
                   Looks Good
                 </Button>
@@ -169,6 +167,7 @@ export function RunStep() {
                 src={api.getVncUrl()}
                 className="absolute inset-0 w-full h-full border-0"
                 title="Application Viewer"
+                onLoad={() => setViewerLoaded(true)}
               />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -181,15 +180,15 @@ export function RunStep() {
           </div>
 
           {/* Terminal output */}
-          <div className="relative">
-            <div className="absolute top-3 left-3 flex items-center gap-2 text-xs text-slate-500">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs text-slate-500">
               <Terminal className="w-3 h-3" />
               <span>Application Output</span>
             </div>
             <pre
               ref={outputRef}
               className={cn(
-                "terminal-output h-32 pt-10",
+                "terminal-output h-32",
                 isFailed && "border border-rose-500/20"
               )}
             >

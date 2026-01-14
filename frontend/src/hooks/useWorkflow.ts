@@ -95,30 +95,23 @@ export const useWorkflow = create<WorkflowState>((set, get) => ({
   },
 
   canNavigateToStep: (step) => {
-    const { stepStatuses, currentStep } = get();
-    const stepOrder: WorkflowStep[] = ['select', 'upload', 'build', 'run', 'review'];
-    const currentIndex = stepOrder.indexOf(currentStep);
+    const { stepStatuses } = get();
+    const stepOrder: WorkflowStep[] = ['upload', 'build', 'run', 'review'];
     const targetIndex = stepOrder.indexOf(step);
     
-    // Can always go back to completed steps
-    if (targetIndex < currentIndex) {
-      return stepStatuses[step] === 'completed' || stepStatuses[step] === 'warning';
-    }
+    // Can always go to upload
+    if (targetIndex === 0) return true;
     
-    // Can go to current step
-    if (targetIndex === currentIndex) {
+    // Can go to any step that's been started (not pending)
+    if (stepStatuses[step] !== 'pending') return true;
+    
+    // Can go to next step if previous is completed
+    const prevStep = stepOrder[targetIndex - 1];
+    if (stepStatuses[prevStep] === 'completed' || stepStatuses[prevStep] === 'warning') {
       return true;
     }
     
-    // Can only go forward if all previous steps are completed
-    for (let i = 0; i < targetIndex; i++) {
-      const status = stepStatuses[stepOrder[i]];
-      if (status !== 'completed' && status !== 'warning') {
-        return false;
-      }
-    }
-    
-    return true;
+    return false;
   },
 
   setStepStatus: (step, status) => set({
