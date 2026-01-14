@@ -88,6 +88,10 @@
             color: #e94560;
             font-size: 18px;
         }
+        .step-icon .warning-circle {
+            color: #f39c12;
+            font-size: 18px;
+        }
         .step-icon .empty {
             width: 10px;
             height: 10px;
@@ -354,6 +358,22 @@
         .error-message h3 {
             color: #e94560;
             margin-bottom: 10px;
+        }
+        .inline-error {
+            background: rgba(233, 69, 96, 0.2);
+            border: 1px solid #e94560;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            color: #e94560;
+        }
+        .inline-error h4 {
+            margin: 0 0 8px 0;
+            font-size: 1em;
+        }
+        .inline-error p {
+            margin: 0;
+            color: #eee;
         }
 
         /* Status text */
@@ -729,17 +749,21 @@
                         <span class="spinner"></span>
                         Compiling...
                     </p>
+                    <div class="inline-error" id="buildError" style="display: none;"></div>
+                    <div class="actions" id="buildErrorActions" style="display: none; margin-top: 15px;">
+                        <button id="buildRetryBtn">Try Again</button>
+                    </div>
                 </div>
             </div>
 
             <!-- Step 3: Running -->
             <div class="step" id="step-run">
                 <h2>Verify Your Application</h2>
-                <div class="actions" style="margin-bottom: 15px;">
+                <div class="actions" style="margin-bottom: 15px;" id="runActions">
                     <button id="doneBtn">Looks Good</button>
                     <button id="restartBtn" class="btn-secondary">Restart App</button>
                 </div>
-                <div class="ui-note">
+                <div class="ui-note" id="runNote">
                     <strong>Note:</strong> The UI may appear slightly different than expected (sizing, fonts). This is expected and okay.
                 </div>
                 <div class="viewer-container">
@@ -747,6 +771,10 @@
                         <div class="vnc-loading" id="vncLoading">Connecting to display...</div>
                     </div>
                     <div class="output run-output" id="runOutput"></div>
+                    <div class="inline-error" id="runError" style="display: none;"></div>
+                    <div class="actions" id="runErrorActions" style="display: none; margin-top: 15px;">
+                        <button id="runRetryBtn">Try Again</button>
+                    </div>
                 </div>
             </div>
 
@@ -887,6 +915,14 @@
         const retryBtn = document.getElementById('retryBtn');
         const startOverBtn = document.getElementById('startOverBtn');
         const errorText = document.getElementById('errorText');
+        const buildError = document.getElementById('buildError');
+        const buildErrorActions = document.getElementById('buildErrorActions');
+        const buildRetryBtn = document.getElementById('buildRetryBtn');
+        const runError = document.getElementById('runError');
+        const runErrorActions = document.getElementById('runErrorActions');
+        const runRetryBtn = document.getElementById('runRetryBtn');
+        const runActions = document.getElementById('runActions');
+        const runNote = document.getElementById('runNote');
 
         // Sidebar elements
         const sidebarItems = {
@@ -940,7 +976,7 @@
             const itemEl = sidebarItems[step];
 
             // Remove all state classes
-            itemEl.classList.remove('active', 'completed', 'failed');
+            itemEl.classList.remove('active', 'completed', 'failed', 'warning');
 
             if (state === 'processing') {
                 iconEl.innerHTML = '<span class="spinner-small"></span>';
@@ -948,6 +984,9 @@
             } else if (state === 'completed') {
                 iconEl.innerHTML = '<span class="checkmark">&#10003;</span>';
                 itemEl.classList.add('completed');
+            } else if (state === 'warning') {
+                iconEl.innerHTML = '<span class="warning-circle">&#9679;</span>';
+                itemEl.classList.add('warning');
             } else if (state === 'failed') {
                 iconEl.innerHTML = '<span class="xmark">&#10007;</span>';
                 itemEl.classList.add('failed');
@@ -1054,6 +1093,7 @@
             buildOutput.textContent = '';
             buildStatus.innerHTML = '<span class="spinner"></span>Compiling...';
             buildStatus.className = 'status-text building';
+            hideBuildError();
             updateSidebarIcon('build', 'processing');
 
             try {
@@ -1062,7 +1102,7 @@
                 if (!res.ok) {
                     const data = await res.json();
                     updateSidebarIcon('build', 'failed');
-                    showError(data.error || 'Build failed to start');
+                    showBuildError(data.error || 'Build failed to start');
                     return;
                 }
 
@@ -1073,7 +1113,7 @@
                 startReviewStream();
             } catch (err) {
                 updateSidebarIcon('build', 'failed');
-                showError('Build failed: ' + err.message);
+                showBuildError('Build failed: ' + err.message);
             }
         }
 
@@ -1105,7 +1145,7 @@
                     }, 500);
                 } else if (result.status === 'error') {
                     updateSidebarIcon('build', 'failed');
-                    showError(result.error || 'Build failed');
+                    showBuildError(result.error || 'Build failed');
                 }
             });
 
@@ -1119,6 +1159,7 @@
 
         async function startRun() {
             runOutput.textContent = '';
+            hideRunError();
             goToStep('run');
             updateSidebarIcon('run', 'processing');
 
@@ -1127,7 +1168,7 @@
                 if (!res.ok) {
                     const data = await res.json();
                     updateSidebarIcon('run', 'failed');
-                    showError(data.error || 'Failed to start application');
+                    showRunError(data.error || 'Failed to start application');
                     return;
                 }
 
@@ -1138,7 +1179,7 @@
                 streamRunOutput();
             } catch (err) {
                 updateSidebarIcon('run', 'failed');
-                showError('Failed to start: ' + err.message);
+                showRunError('Failed to start: ' + err.message);
             }
         }
 
@@ -1181,6 +1222,34 @@
             goToStep('error');
         }
 
+        function showBuildError(message) {
+            buildStatus.innerHTML = '<span style="color: #e94560;">Build failed</span>';
+            buildStatus.className = 'status-text';
+            buildError.innerHTML = `<h4>Build Error</h4><p>${escapeHtml(message)}</p>`;
+            buildError.style.display = 'block';
+            buildErrorActions.style.display = 'flex';
+        }
+
+        function hideBuildError() {
+            buildError.style.display = 'none';
+            buildErrorActions.style.display = 'none';
+        }
+
+        function showRunError(message) {
+            runError.innerHTML = `<h4>Application Error</h4><p>${escapeHtml(message)}</p>`;
+            runError.style.display = 'block';
+            runErrorActions.style.display = 'flex';
+            runActions.style.display = 'none';
+            runNote.style.display = 'none';
+        }
+
+        function hideRunError() {
+            runError.style.display = 'none';
+            runErrorActions.style.display = 'none';
+            runActions.style.display = 'flex';
+            runNote.style.display = 'block';
+        }
+
         async function checkStatus() {
             try {
                 const res = await fetch(`${API_BASE}/api/status`);
@@ -1192,7 +1261,15 @@
                     buildStatus.className = 'status-text';
                     setTimeout(() => startRun(), 500);
                 } else if (state.status === 'error') {
-                    showError(state.errorMessage || 'An error occurred');
+                    if (currentStep === 'build') {
+                        updateSidebarIcon('build', 'failed');
+                        showBuildError(state.errorMessage || 'Build failed');
+                    } else if (currentStep === 'run') {
+                        updateSidebarIcon('run', 'failed');
+                        showRunError(state.errorMessage || 'Application error');
+                    } else {
+                        showError(state.errorMessage || 'An error occurred');
+                    }
                 }
             } catch (err) {
                 console.error('Status check failed:', err);
@@ -1360,7 +1437,19 @@
                 sidebarItems.review.classList.remove('has-preview');
             } else if (reviewState.status === 'completed' && reviewState.result) {
                 renderReviewResult(reviewState.result);
-                updateSidebarIcon('review', 'completed');
+                // Update sidebar icon based on score
+                const score = reviewState.result.overallScore;
+                if (score !== undefined) {
+                    if (score >= 75) {
+                        updateSidebarIcon('review', 'completed');
+                    } else if (score >= 50) {
+                        updateSidebarIcon('review', 'warning');
+                    } else {
+                        updateSidebarIcon('review', 'failed');
+                    }
+                } else {
+                    updateSidebarIcon('review', 'completed');
+                }
                 sidebarReviewPreview.classList.remove('active');
                 sidebarItems.review.classList.remove('has-preview');
             }
@@ -1430,6 +1519,8 @@
             await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
             await fetch(`${API_BASE}/api/reset`, { method: 'POST' });
             hideVNC();
+            hideBuildError();
+            hideRunError();
             if (reviewEventSource) {
                 reviewEventSource.close();
                 reviewEventSource = null;
@@ -1460,6 +1551,8 @@
             await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
             await fetch(`${API_BASE}/api/reset`, { method: 'POST' });
             hideVNC();
+            hideBuildError();
+            hideRunError();
             if (reviewEventSource) {
                 reviewEventSource.close();
                 reviewEventSource = null;
@@ -1491,8 +1584,30 @@
             startRun();
         });
 
+        buildRetryBtn.addEventListener('click', async () => {
+            await fetch(`${API_BASE}/api/reset`, { method: 'POST' });
+            hideBuildError();
+            // Reset sidebar icons
+            updateSidebarIcon('upload', 'pending');
+            updateSidebarIcon('build', 'pending');
+            updateSidebarIcon('run', 'pending');
+            updateSidebarIcon('review', 'pending');
+            goToStep('upload');
+            fileInput.value = '';
+        });
+
+        runRetryBtn.addEventListener('click', async () => {
+            await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
+            hideVNC();
+            hideRunError();
+            runOutput.textContent = '';
+            startRun();
+        });
+
         retryBtn.addEventListener('click', async () => {
             await fetch(`${API_BASE}/api/reset`, { method: 'POST' });
+            hideBuildError();
+            hideRunError();
             if (reviewEventSource) {
                 reviewEventSource.close();
                 reviewEventSource = null;
@@ -1582,7 +1697,24 @@
                 } else if (state.status === 'error') {
                     goToPage('workflow');
                     updateSelectedAssignmentBanner(state.selectedAssignmentPartId);
-                    showError(state.errorMessage || 'An error occurred');
+                    // Show error inline on the appropriate step
+                    if (state.errorStep === 'build' || state.buildOutput) {
+                        updateSidebarIcon('upload', 'completed');
+                        updateSidebarIcon('build', 'failed');
+                        goToStep('build');
+                        projectNameEl.textContent = state.name || '-';
+                        buildOutput.textContent = state.buildOutput || '';
+                        showBuildError(state.errorMessage || 'Build failed');
+                    } else if (state.errorStep === 'run' || state.runOutput) {
+                        updateSidebarIcon('upload', 'completed');
+                        updateSidebarIcon('build', 'completed');
+                        updateSidebarIcon('run', 'failed');
+                        goToStep('run');
+                        runOutput.textContent = state.runOutput || '';
+                        showRunError(state.errorMessage || 'Application error');
+                    } else {
+                        showError(state.errorMessage || 'An error occurred');
+                    }
                 }
                 // Otherwise stay on select page
             } catch (err) {
