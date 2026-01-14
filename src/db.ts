@@ -153,32 +153,33 @@ export function seedDatabase(force = false) {
     "Windows Forms app that displays your name in a label when a button is pressed.",
     [
       "Button triggers name display in a label",
-      "Proper C# naming conventions (CamelCase with no abbreviations)",
+      "Follow C# naming conventions (prefer CamelCase, avoid abbreviations)",
       "Code must be commented"
     ],
     `Review this C# WinForms project for the Name Display Application.
 
-**Required Elements:**
+**Required Elements (not met is up to a 100% deduction):**
 - Button that triggers name display
 - Label that shows the name when button clicked
 - Proper event handler implementation
 
-**Naming Conventions to Check:**
-- ALL control names must use CamelCase (e.g., ShowNameButton, DisplayNameLabel)
-- NO abbreviations allowed (e.g., "btn", "lbl", "txt" are NOT acceptable)
-- Full descriptive names required (e.g., EarthWeightTextBox not txtEarthWeight)
-- Variables: camelCase for local variables, PascalCase for properties/public members
-- Class names: PascalCase
-- REJECT any Hungarian notation or abbreviated prefixes
+**Naming Conventions (max 10% deduction, mark as warnings not errors):**
+- Prefer CamelCase control names (e.g., ShowNameButton, DisplayNameLabel)
+- Avoid abbreviations/Hungarian notation (e.g., "btn", "lbl", "txt")
+- Full descriptive names preferred over abbreviated prefixes
+- Variables: camelCase for local variables
+- Note: Naming issues alone should not significantly impact the grade if functionality is correct
 
-**Code Quality:**
+**Code Quality (max 20% deduction):**
 - Comments explaining key logic
 - Clean event handlers
 - Proper form initialization
 
 **Scoring:**
-- Higher: Excellent naming (ShowNameButton, DisplayNameLabel), no abbreviations, clear comments, clean code
-- Lower: Default names (button1, label1), abbreviations (btn, lbl), missing comments, poor conventions`
+- Functionality is most important (70-80% of grade)
+- Good naming is preferred but only minor deduction for abbreviations (max 10%)
+- Comments and code quality matter but less than working functionality
+- Default names (button1, label1) are worse than abbreviated names (btn, lbl)`
   );
 
   // Part 3: Weight Converter Application
@@ -191,7 +192,7 @@ export function seedDatabase(force = false) {
       "TextBox for Earth weight input",
       "Button triggers conversion",
       "Label displays result formatted to 2 decimal places",
-      "Proper naming conventions (CamelCase with no abbreviations)",
+      "Follow naming conventions (prefer CamelCase, avoid abbreviations)",
       "Code must be commented"
     ],
     `Review this C# WinForms project for the Mars Weight Converter.
@@ -211,12 +212,12 @@ export function seedDatabase(force = false) {
 - Must use String.Format, ToString("F2"), or interpolation with :F2
 - Example output: "Your weight on Mars is 76.00 pounds"
 
-**Naming Conventions:**
-- ALL control names must use CamelCase (e.g., EarthWeightTextBox, ConvertButton, MarsWeightLabel)
-- NO abbreviations allowed (e.g., "txt", "btn", "lbl" are NOT acceptable)
-- Full descriptive names required - spell out all words completely
+**Naming Conventions (max 10% deduction, mark as warnings not errors):**
+- Prefer CamelCase control names (e.g., EarthWeightTextBox, ConvertButton, MarsWeightLabel)
+- Avoid abbreviations/Hungarian notation (e.g., "txt", "btn", "lbl")
+- Full descriptive names preferred over abbreviated prefixes
 - Variables: camelCase for local variables
-- REJECT any Hungarian notation or abbreviated prefixes
+- Note: Naming issues alone should not significantly impact the grade if functionality is correct
 
 **Bonus Considerations:**
 - Input validation for non-numeric input
@@ -224,8 +225,10 @@ export function seedDatabase(force = false) {
 - Preventing negative values
 
 **Scoring:**
-- Higher: Correct formula, proper 2-decimal formatting, CamelCase naming with NO abbreviations, input validation, comments
-- Lower: Wrong formula, missing/wrong formatting, default control names, abbreviations (txt/btn/lbl), no validation`
+- Functionality is most important (70-80% of grade): correct formula, proper formatting
+- Good naming is preferred but only minor deduction for abbreviations (max 10%)
+- Bonus for input validation, not required
+- Default names (button1, label1) are worse than abbreviated names (btn, lbl)`
   );
 
   console.log("Database seeded successfully with CST-150 Activity 1 assignments");

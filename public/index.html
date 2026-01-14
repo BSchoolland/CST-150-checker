@@ -1440,7 +1440,7 @@
                 // Update sidebar icon based on score
                 const score = reviewState.result.overallScore;
                 if (score !== undefined) {
-                    if (score >= 75) {
+                    if (score > 75) {
                         updateSidebarIcon('review', 'completed');
                     } else if (score >= 50) {
                         updateSidebarIcon('review', 'warning');

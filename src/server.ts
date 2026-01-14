@@ -617,10 +617,9 @@ Your task is to evaluate the student's code against the requirements and rubric 
    - Are calculations/formulas correct?
    - Does output match required format?
 
-2. **Naming Conventions**
-   - Control prefixes: btn, lbl, txt for Button, Label, TextBox
-   - Variables: camelCase for locals
-   - Meaningful names vs default names (button1, label1)
+2. **Naming Conventions** (see rubric above for specific guidance)
+   - Follow the naming convention rules in the rubric
+   - Naming issues should be marked as warnings, not errors
 
 3. **Code Quality**
    - Are there comments explaining the code?
@@ -879,6 +878,9 @@ app.post("/api/run", async (c) => {
       WINEPREFIX: "/opt/wine-dotnet",
       WINEDEBUG: "-all",
       DISPLAY: ":99",
+      // Disable minidump creation and show exceptions in console instead
+      DOTNET_DbgEnableMiniDump: "0",
+      COMPlus_DbgEnableMiniDump: "0",
     };
 
     // Run with Wine from native filesystem
@@ -1231,6 +1233,21 @@ async function findCsproj(dir: string): Promise<string | null> {
 
 // Helper: Find built executable
 async function findExecutable(projectDir: string): Promise<string | null> {
+  if (!state.csprojPath) return null;
+
+  // Try to get AssemblyName from csproj, fall back to csproj filename
+  let assemblyName = basename(state.csprojPath, ".csproj");
+  try {
+    const csprojContent = await Bun.file(state.csprojPath).text();
+    const match = csprojContent.match(/<AssemblyName>([^<]+)<\/AssemblyName>/);
+    if (match) {
+      assemblyName = match[1];
+    }
+  } catch {
+    // Use default from filename
+  }
+  const expectedExeName = assemblyName + ".exe";
+
   const searchPaths = [
     "bin/Release/net8.0-windows/win-x64",
     "bin/Release/net8.0-windows",
@@ -1244,9 +1261,8 @@ async function findExecutable(projectDir: string): Promise<string | null> {
     if (existsSync(fullPath)) {
       try {
         const entries = await readdir(fullPath);
-        const exe = entries.find((f) => f.endsWith(".exe"));
-        if (exe) {
-          return join(fullPath, exe);
+        if (entries.includes(expectedExeName)) {
+          return join(fullPath, expectedExeName);
         }
       } catch {
         continue;

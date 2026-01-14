@@ -49,11 +49,10 @@ For each assignment requirement, determine:
    - Are calculations/formulas correct?
    - Does output match required format?
 
-2. **Naming Conventions**
-   - All controls should use CamelCase with no abbreviations
-   - Full descriptive names prefered (e.g., ShowNameButton, EarthWeightTextBox, MarsWeightLabel)
-   - Meaningful, descriptive names vs default names (button1, label1)
-   - We do care about naming but are not too strict.  Don't mark more than 10% off for naming convention only mistakes, and mark these types of issues as warning, not error.
+2. **Naming Conventions** (follow the rubric provided in the assignment)
+   - The assignment rubric contains the specific naming requirements
+   - Max 10% deduction for naming issues alone - mark as warnings, not errors
+   - Functionality is more important than naming conventions
 
 3. **Code Quality**
    - Are there comments explaining the code?
@@ -82,4 +81,14 @@ Your review MUST include:
 - Be specific - cite file names and line numbers
 - Be educational - explain WHY something doesn't meet the requirement
 - Be encouraging - acknowledge what was done correctly
+
+## CRITICAL: Following Instructions
+
+**Deduct at least 30%** (and likely more) if the student:
+- Implements something "similar to" but not what was actually requested
+- Builds adjacent functionality instead of the specified requirements
+- Ignores key instructions (e.g., uses console app instead of WinForms, different controls than specified)
+- Misunderstands the assignment and builds the wrong thing
+
+Students must implement **exactly what was asked**, not their interpretation of it. Close is not good enough - the assignment specifies requirements for a reason.
 
