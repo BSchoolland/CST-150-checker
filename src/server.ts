@@ -863,6 +863,16 @@ app.post("/api/run", async (c) => {
     const exeDir = join(state.exePath, "..");
     const exeName = basename(state.exePath);
 
+    // Copy build output to native filesystem to avoid Wine + 9p/drvfs issues
+    // The /app/projects mount uses 9p filesystem which causes Wine crashes
+    const nativeRunDir = "/tmp/wine-run";
+    const copyResult = Bun.spawnSync({
+      cmd: ["sh", "-c", `rm -rf ${nativeRunDir} && cp -r "${exeDir}" ${nativeRunDir}`],
+    });
+    if (copyResult.exitCode !== 0) {
+      return c.json({ error: "Failed to prepare runtime environment" }, 500);
+    }
+
     // Set up Wine environment
     const env = {
       ...process.env,
@@ -871,10 +881,10 @@ app.post("/api/run", async (c) => {
       DISPLAY: ":99",
     };
 
-    // Run with Wine
+    // Run with Wine from native filesystem
     runningProcess = spawn({
       cmd: ["wine", exeName],
-      cwd: exeDir,
+      cwd: nativeRunDir,
       env,
       stdout: "pipe",
       stderr: "pipe",

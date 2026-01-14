@@ -50,9 +50,10 @@ For each assignment requirement, determine:
    - Does output match required format?
 
 2. **Naming Conventions**
-   - Control prefixes: btn, lbl, txt for Button, Label, TextBox
-   - Variables: camelCase for locals, PascalCase for properties
+   - All controls should use CamelCase with no abbreviations
+   - Full descriptive names prefered (e.g., ShowNameButton, EarthWeightTextBox, MarsWeightLabel)
    - Meaningful, descriptive names vs default names (button1, label1)
+   - We do care about naming but are not too strict.  Don't mark more than 10% off for naming convention only mistakes, and mark these types of issues as warning, not error.
 
 3. **Code Quality**
    - Are there comments explaining the code?
@@ -81,8 +82,4 @@ Your review MUST include:
 - Be specific - cite file names and line numbers
 - Be educational - explain WHY something doesn't meet the requirement
 - Be encouraging - acknowledge what was done correctly
-- If no assignment requirements are provided, fall back to general C# best practices review
-
-Do NOT attempt to modify any files. Your only output mechanism is the submit_review tool.
-
 

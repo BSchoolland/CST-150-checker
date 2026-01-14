@@ -41,9 +41,18 @@ RUN mkdir -pm755 /etc/apt/keyrings && \
     wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key && \
     wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/jammy/winehq-jammy.sources
 
-# Install Wine
-RUN apt-get update && apt-get install -y --install-recommends winehq-stable && \
-    rm -rf /var/lib/apt/lists/*
+# Install Wine with font support for .NET WinForms
+# Pin to Wine 10.0 - Wine 11.0 has compatibility issues with .NET 8 WinForms
+RUN apt-get update && apt-get install -y --install-recommends \
+    winehq-stable=10.0.0.0~jammy-1 \
+    wine-stable=10.0.0.0~jammy-1 \
+    wine-stable-amd64=10.0.0.0~jammy-1 \
+    wine-stable-i386:i386=10.0.0.0~jammy-1 \
+    fonts-liberation \
+    fonts-dejavu \
+    fontconfig \
+    cabextract \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install .NET SDK (native Linux version for building)
 RUN wget -qO- https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0 --install-dir /opt/dotnet
@@ -64,8 +73,17 @@ ENV WINEPREFIX=/opt/wine-dotnet
 ENV WINEARCH=win64
 ENV WINEDEBUG=-all
 
-# Initialize Wine prefix
-RUN wineboot --init && wineserver --wait || true
+# Initialize Wine prefix (give it more time on slower machines)
+RUN timeout 300 wineboot --init && \
+    wineserver --wait && \
+    echo "Wine prefix initialized successfully"
+
+# Install winetricks and corefonts for WinForms font support
+RUN wget -q https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks -O /usr/local/bin/winetricks && \
+    chmod +x /usr/local/bin/winetricks && \
+    timeout 600 winetricks -q corefonts && \
+    wineserver --wait && \
+    echo "Winetricks corefonts installed successfully"
 
 # Download and install .NET SDK and Desktop Runtime for Windows (in Wine)
 RUN mkdir -p /opt/wine-dotnet/drive_c/dotnet /tmp/dotnet-setup && \
@@ -113,7 +131,9 @@ COPY package.json /app/
 COPY src/ /app/src/
 COPY public/ /app/public/
 COPY openbox-rc.xml /app/openbox-rc.xml
-COPY example-projects/ /app/example-projects/
+
+# Create example-projects directory
+RUN mkdir -p /app/example-projects
 
 # Copy opencode plugin and configuration
 COPY opencode-plugin/ /app/opencode-plugin/
@@ -131,18 +151,14 @@ RUN bun install
 WORKDIR /app/opencode-plugin
 RUN bun install
 
-# Install opencode config dependencies (includes plugin reference)
-WORKDIR /app/opencode-config/opencode
-RUN bun install
-
 WORKDIR /app
 
 # Make config writable for review container (runs as uid 1000)
 RUN chmod -R 777 /app/opencode-config
 
-# Copy entrypoint script
+# Copy entrypoint script and fix Windows line endings
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Copy supervisor configuration
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf

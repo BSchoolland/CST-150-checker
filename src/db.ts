@@ -153,7 +153,7 @@ export function seedDatabase(force = false) {
     "Windows Forms app that displays your name in a label when a button is pressed.",
     [
       "Button triggers name display in a label",
-      "Proper C# naming conventions (btn, lbl prefixes)",
+      "Proper C# naming conventions (CamelCase with no abbreviations)",
       "Code must be commented"
     ],
     `Review this C# WinForms project for the Name Display Application.
@@ -164,9 +164,12 @@ export function seedDatabase(force = false) {
 - Proper event handler implementation
 
 **Naming Conventions to Check:**
-- Control prefixes: btn for Button, lbl for Label, txt for TextBox
-- Variables: camelCase for private, PascalCase for public
+- ALL control names must use CamelCase (e.g., ShowNameButton, DisplayNameLabel)
+- NO abbreviations allowed (e.g., "btn", "lbl", "txt" are NOT acceptable)
+- Full descriptive names required (e.g., EarthWeightTextBox not txtEarthWeight)
+- Variables: camelCase for local variables, PascalCase for properties/public members
 - Class names: PascalCase
+- REJECT any Hungarian notation or abbreviated prefixes
 
 **Code Quality:**
 - Comments explaining key logic
@@ -174,8 +177,8 @@ export function seedDatabase(force = false) {
 - Proper form initialization
 
 **Scoring:**
-- Higher: Excellent naming (btnShowName, lblDisplayName), clear comments, clean code
-- Lower: Default names (button1, label1), missing comments, poor conventions`
+- Higher: Excellent naming (ShowNameButton, DisplayNameLabel), no abbreviations, clear comments, clean code
+- Lower: Default names (button1, label1), abbreviations (btn, lbl), missing comments, poor conventions`
   );
 
   // Part 3: Weight Converter Application
@@ -188,7 +191,7 @@ export function seedDatabase(force = false) {
       "TextBox for Earth weight input",
       "Button triggers conversion",
       "Label displays result formatted to 2 decimal places",
-      "Proper naming conventions and control prefixes",
+      "Proper naming conventions (CamelCase with no abbreviations)",
       "Code must be commented"
     ],
     `Review this C# WinForms project for the Mars Weight Converter.
@@ -209,8 +212,11 @@ export function seedDatabase(force = false) {
 - Example output: "Your weight on Mars is 76.00 pounds"
 
 **Naming Conventions:**
-- Controls: txtEarthWeight, btnConvert, lblMarsWeight
-- Variables: camelCase for locals
+- ALL control names must use CamelCase (e.g., EarthWeightTextBox, ConvertButton, MarsWeightLabel)
+- NO abbreviations allowed (e.g., "txt", "btn", "lbl" are NOT acceptable)
+- Full descriptive names required - spell out all words completely
+- Variables: camelCase for local variables
+- REJECT any Hungarian notation or abbreviated prefixes
 
 **Bonus Considerations:**
 - Input validation for non-numeric input
@@ -218,8 +224,8 @@ export function seedDatabase(force = false) {
 - Preventing negative values
 
 **Scoring:**
-- Higher: Correct formula, proper 2-decimal formatting, good naming, input validation, comments
-- Lower: Wrong formula, missing/wrong formatting, default control names, no validation`
+- Higher: Correct formula, proper 2-decimal formatting, CamelCase naming with NO abbreviations, input validation, comments
+- Lower: Wrong formula, missing/wrong formatting, default control names, abbreviations (txt/btn/lbl), no validation`
   );
 
   console.log("Database seeded successfully with CST-150 Activity 1 assignments");

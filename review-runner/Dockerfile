@@ -51,9 +51,7 @@ COPY opencode-config/opencode/ /app/opencode-config/opencode/
 COPY opencode-plugin/ /app/opencode-plugin/
 RUN chown -R reviewer:reviewer /app/opencode-config /app/opencode-plugin
 
-# Install opencode config and plugin dependencies
-WORKDIR /app/opencode-config/opencode
-RUN bun install
+# Install opencode plugin dependencies
 WORKDIR /app/opencode-plugin
 RUN bun install
 WORKDIR /app
