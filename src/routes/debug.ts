@@ -5,7 +5,6 @@
 import { Hono } from "hono";
 import { spawn } from "bun";
 import { sessionManager } from "../session-manager";
-import { getReviewState } from "../review-runner";
 
 const app = new Hono();
 
@@ -49,10 +48,15 @@ app.get("/sessions", (c) => {
 });
 
 /**
- * Get review state
+ * Get review state for all sessions
  */
 app.get("/review", (c) => {
-  return c.json(getReviewState());
+  const sessions = sessionManager.getAllSessions();
+  const reviewStates = sessions.map((s) => ({
+    sessionId: s.id,
+    reviewState: s.reviewState,
+  }));
+  return c.json({ reviewStates });
 });
 
 /**

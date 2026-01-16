@@ -1,5 +1,7 @@
 /**
  * Review Runner - Handles sandboxed code review in sibling containers
+ * 
+ * Each session gets isolated input/output paths to prevent concurrent review interference.
  */
 
 import { spawn } from "bun";
@@ -7,111 +9,93 @@ import { mkdir, rm, readFile } from "fs/promises";
 import { existsSync } from "fs";
 import { resolve } from "path";
 import { getAssignmentPart } from "./db";
-import type { ReviewState, ReviewResult } from "./types";
+import { sessionManager } from "./session-manager";
+import type { ReviewResult } from "./types";
 
 // Configuration
 const REVIEW_CONTAINER_IMAGE = "cst150-review-runner:latest";
 const REVIEW_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const REVIEW_INPUT_PATH = "/app/review-input";
-const REVIEW_OUTPUT_PATH = process.env.REVIEW_OUTPUT_PATH || "/app/review-output/review.json";
+const REVIEW_INPUT_BASE = "/app/review-input";
+const REVIEW_OUTPUT_BASE = process.env.REVIEW_OUTPUT_BASE || "/app/review-output";
 
-// Review state (per-session in future, global for now during transition)
-let reviewState: ReviewState = {
-  status: "idle",
-  result: null,
-  output: "",
-  errorMessage: null,
-};
-
-// Callbacks for streaming
-let reviewStreamCallbacks: ((data: string) => void)[] = [];
-let reviewStatusCallbacks: ((status: ReviewState) => void)[] = [];
-
-export function getReviewState(): ReviewState {
-  return reviewState;
-}
-
-export function resetReviewState(): void {
-  reviewState = {
-    status: "idle",
-    result: null,
-    output: "",
-    errorMessage: null,
-  };
-}
-
-export function addReviewStreamCallback(cb: (data: string) => void): void {
-  reviewStreamCallbacks.push(cb);
-}
-
-export function addReviewStatusCallback(cb: (status: ReviewState) => void): void {
-  reviewStatusCallbacks.push(cb);
-}
-
-function emitReviewOutput(data: string): void {
-  reviewState.output += data;
-  process.stdout.write(`[review] ${data}`);
-  reviewStreamCallbacks.forEach((cb) => {
-    try { cb(data); } catch { /* disconnected */ }
-  });
-}
-
-function emitReviewStatusChange(): void {
-  reviewStatusCallbacks.forEach((cb) => {
-    try { cb(reviewState); } catch { /* disconnected */ }
-  });
+/**
+ * Get session-specific review input path
+ */
+function getReviewInputPath(sessionId: string): string {
+  return `${REVIEW_INPUT_BASE}/${sessionId}`;
 }
 
 /**
- * Run code review in a sandboxed container
+ * Get session-specific review output path
+ */
+function getReviewOutputPath(sessionId: string): string {
+  return `${REVIEW_OUTPUT_BASE}/${sessionId}/review.json`;
+}
+
+/**
+ * Emit review output for a session
+ */
+function emitReviewOutput(sessionId: string, data: string): void {
+  process.stdout.write(`[review:${sessionId.slice(0, 8)}] ${data}`);
+  sessionManager.emitReviewOutput(sessionId, data);
+}
+
+/**
+ * Run code review in a sandboxed container for a specific session
  */
 export async function runReview(
+  sessionId: string,
   projectPath: string,
   selectedAssignmentPartId: number | null
 ): Promise<void> {
+  const reviewInputPath = getReviewInputPath(sessionId);
+  const reviewOutputPath = getReviewOutputPath(sessionId);
+  const reviewOutputDir = reviewOutputPath.substring(0, reviewOutputPath.lastIndexOf('/'));
+
   try {
-    // Clean up previous review output
+    // Clean up previous review output for this session
     try {
-      await rm(REVIEW_OUTPUT_PATH, { force: true });
+      await rm(reviewOutputPath, { force: true });
     } catch {
       // Ignore if file doesn't exist
     }
     
-    // Ensure output directory exists
-    const reviewDir = REVIEW_OUTPUT_PATH.substring(0, REVIEW_OUTPUT_PATH.lastIndexOf('/'));
-    await mkdir(reviewDir, { recursive: true });
+    // Ensure session-specific directories exist
+    await mkdir(reviewInputPath, { recursive: true });
+    await mkdir(reviewOutputDir, { recursive: true });
 
     const absoluteProjectPath = resolve(projectPath);
 
-    reviewState = {
+    // Update session review state
+    sessionManager.updateReviewState(sessionId, {
       status: "reviewing",
       result: null,
       output: "",
       errorMessage: null,
-    };
-    emitReviewStatusChange();
-    emitReviewOutput("Starting code review in sandboxed container...\n");
-    emitReviewOutput(`Project path: ${absoluteProjectPath}\n`);
+    });
+    
+    emitReviewOutput(sessionId, "Starting code review in sandboxed container...\n");
+    emitReviewOutput(sessionId, `Project path: ${absoluteProjectPath}\n`);
 
-    // Clean and copy project files to shared input volume
-    emitReviewOutput("Copying project files to sandbox...\n");
+    // Clean and copy project files to session-specific input directory
+    emitReviewOutput(sessionId, "Copying project files to sandbox...\n");
     
     const cleanInputProc = spawn({
-      cmd: ["sh", "-c", `chmod -R 777 ${REVIEW_INPUT_PATH} 2>/dev/null || true; rm -rf ${REVIEW_INPUT_PATH}/* ${REVIEW_INPUT_PATH}/.[!.]* 2>/dev/null || true`],
+      cmd: ["sh", "-c", `chmod -R 777 ${reviewInputPath} 2>/dev/null || true; rm -rf ${reviewInputPath}/* ${reviewInputPath}/.[!.]* 2>/dev/null || true`],
       stdout: "ignore",
       stderr: "ignore",
     });
     await cleanInputProc.exited;
     
     const chmodOutputProc = spawn({
-      cmd: ["sh", "-c", `chmod -R 777 ${reviewDir} 2>/dev/null || true; rm -f ${REVIEW_OUTPUT_PATH} 2>/dev/null || true`],
+      cmd: ["sh", "-c", `chmod -R 777 ${reviewOutputDir} 2>/dev/null || true; rm -f ${reviewOutputPath} 2>/dev/null || true`],
       stdout: "ignore",
       stderr: "ignore",
     });
     await chmodOutputProc.exited;
 
     const copyProc = spawn({
-      cmd: ["cp", "-r", `${absoluteProjectPath}/.`, REVIEW_INPUT_PATH],
+      cmd: ["cp", "-r", `${absoluteProjectPath}/.`, reviewInputPath],
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -139,7 +123,7 @@ export async function runReview(
       const assignmentPart = getAssignmentPart(selectedAssignmentPartId);
       if (assignmentPart) {
         const requirements = JSON.parse(assignmentPart.requirements) as string[];
-        emitReviewOutput(`Reviewing against assignment: ${assignmentPart.title}\n`);
+        emitReviewOutput(sessionId, `Reviewing against assignment: ${assignmentPart.title}\n`);
 
         agentSystemPrompt = buildAgentPrompt(assignmentPart, requirements);
         reviewPrompt = "Review the student's code in /app/project against the assignment requirements.";
@@ -150,8 +134,8 @@ export async function runReview(
       throw new Error("No assignment selected. You must select an assignment before running code review.");
     }
 
-    // Write dynamic agent config to shared volume
-    const agentConfigDir = `${REVIEW_INPUT_PATH}/.opencode-config/opencode/agent`;
+    // Write dynamic agent config to session-specific input directory
+    const agentConfigDir = `${reviewInputPath}/.opencode-config/opencode/agent`;
     await mkdir(agentConfigDir, { recursive: true });
 
     const agentConfigContent = `---
@@ -177,28 +161,36 @@ ${agentSystemPrompt}
 
     await Bun.write(`${agentConfigDir}/code-reviewer.md`, agentConfigContent);
 
+    // Configure review output path for this session
     const opencodeConfigContent = {
       plugin: ["/app/opencode-plugin"],
       permission: { external_directory: "allow" },
       "$schema": "https://opencode.ai/config.json"
     };
-    await Bun.write(`${REVIEW_INPUT_PATH}/.opencode-config/opencode/config.json`, JSON.stringify(opencodeConfigContent, null, 2));
+    await Bun.write(`${reviewInputPath}/.opencode-config/opencode/config.json`, JSON.stringify(opencodeConfigContent, null, 2));
 
     // Fix permissions
     const chmodProc = spawn({
-      cmd: ["chmod", "-R", "777", REVIEW_INPUT_PATH],
+      cmd: ["chmod", "-R", "777", reviewInputPath],
       stdout: "ignore",
       stderr: "ignore",
     });
     await chmodProc.exited;
 
-    emitReviewOutput("Generated dynamic agent config with assignment requirements\n");
+    emitReviewOutput(sessionId, "Generated dynamic agent config with assignment requirements\n");
 
-    // Generate unique container name
-    const containerName = `review-${Date.now()}`;
+    // Generate unique container name using session ID
+    const containerName = `review-${sessionId.slice(0, 8)}-${Date.now()}`;
+
+    // Get host paths for Docker sibling container bind mounts
+    const hostReviewInputDir = process.env.HOST_REVIEW_INPUT_DIR || "/app/review-input";
+    const hostReviewOutputDir = process.env.HOST_REVIEW_OUTPUT_DIR || "/app/review-output";
+    const hostReviewInputPath = `${hostReviewInputDir}/${sessionId}`;
+    const hostReviewOutputPath = `${hostReviewOutputDir}/${sessionId}`;
 
     // Run opencode in sandboxed sibling container
-    emitReviewOutput(`Spawning review container: ${containerName}\n`);
+    // Mount only this session's project (not the entire volume) at /app/project
+    emitReviewOutput(sessionId, `Spawning review container: ${containerName}\n`);
     const reviewProc = spawn({
       cmd: [
         "docker", "run",
@@ -215,8 +207,11 @@ ${agentSystemPrompt}
         "--tmpfs", "/tmp:size=256m,mode=1777",
         "--network", "bridge",
         "--user", "1000:1000",
-        "-v", "cst-150-checker_review-input:/app/project",
-        "-v", "cst-150-checker_review-output:/app/review-output",
+        // Mount only this session's project folder at /app/project (not the entire volume)
+        "-v", `${hostReviewInputPath}:/app/project`,
+        // Mount only this session's output folder
+        "-v", `${hostReviewOutputPath}:/app/review-output:rw`,
+        // Set environment variables - XDG_CONFIG_HOME points to the config in /app/project
         "-e", "XDG_CONFIG_HOME=/app/project/.opencode-config",
         "-e", "XDG_DATA_HOME=/tmp/opencode-data",
         "-e", "XDG_STATE_HOME=/tmp/opencode-state",
@@ -225,6 +220,7 @@ ${agentSystemPrompt}
         "-e", "CI=true",
         "-e", "HOME=/home/reviewer",
         "-e", "PATH=/home/reviewer/.opencode/bin:/home/reviewer/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        // Working directory is the project folder
         "-w", "/app/project",
         REVIEW_CONTAINER_IMAGE,
         "/home/reviewer/.opencode/bin/opencode", "run",
@@ -244,7 +240,7 @@ ${agentSystemPrompt}
       while (true) {
         const { done, value } = await stdoutReader.read();
         if (done) break;
-        emitReviewOutput(decoder.decode(value));
+        emitReviewOutput(sessionId, decoder.decode(value));
       }
     })();
 
@@ -254,7 +250,7 @@ ${agentSystemPrompt}
       while (true) {
         const { done, value } = await stderrReader.read();
         if (done) break;
-        emitReviewOutput(decoder.decode(value));
+        emitReviewOutput(sessionId, decoder.decode(value));
       }
     })();
 
@@ -271,60 +267,46 @@ ${agentSystemPrompt}
       await Promise.race([reviewProc.exited, timeoutPromise]);
       exitCode = reviewProc.exitCode;
     } catch {
-      emitReviewOutput(`\nReview timed out!\n`);
-      reviewState = {
+      emitReviewOutput(sessionId, `\nReview timed out!\n`);
+      sessionManager.updateReviewState(sessionId, {
         status: "error",
-        result: null,
-        output: reviewState.output,
         errorMessage: "Review timed out after 5 minutes",
-      };
-      emitReviewStatusChange();
+      });
       return;
     }
     
-    emitReviewOutput(`\nReview container exited with code: ${exitCode}\n`);
+    emitReviewOutput(sessionId, `\nReview container exited with code: ${exitCode}\n`);
 
-    // Check if review was produced
-    if (existsSync(REVIEW_OUTPUT_PATH)) {
+    // Check if review was produced at session-specific path
+    if (existsSync(reviewOutputPath)) {
       try {
-        const reviewData = await readFile(REVIEW_OUTPUT_PATH, "utf-8");
+        const reviewData = await readFile(reviewOutputPath, "utf-8");
         const result: ReviewResult = JSON.parse(reviewData);
-        reviewState = {
+        sessionManager.updateReviewState(sessionId, {
           status: "completed",
           result,
-          output: reviewState.output,
           errorMessage: null,
-        };
-        emitReviewOutput("\nCode review completed successfully!\n");
-        emitReviewStatusChange();
+        });
+        emitReviewOutput(sessionId, "\nCode review completed successfully!\n");
       } catch (parseError) {
         const parseMsg = parseError instanceof Error ? parseError.message : "Unknown parse error";
-        reviewState = {
+        sessionManager.updateReviewState(sessionId, {
           status: "error",
-          result: null,
-          output: reviewState.output,
           errorMessage: `Failed to parse review output: ${parseMsg}`,
-        };
-        emitReviewStatusChange();
+        });
       }
     } else {
-      reviewState = {
+      sessionManager.updateReviewState(sessionId, {
         status: "error",
-        result: null,
-        output: reviewState.output,
         errorMessage: `No review output produced. Exit code: ${exitCode}`,
-      };
-      emitReviewStatusChange();
+      });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    reviewState = {
+    sessionManager.updateReviewState(sessionId, {
       status: "error",
-      result: null,
-      output: reviewState.output,
       errorMessage: message,
-    };
-    emitReviewStatusChange();
+    });
   }
 }
 

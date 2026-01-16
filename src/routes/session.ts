@@ -9,12 +9,15 @@ import {
   spawnSessionContainer,
   cleanupSessionContainer,
   startCleanupInterval,
+  cleanupOrphanedContainers,
 } from "../container-runner";
 
 const app = new Hono();
 
-// Start the cleanup interval when this module loads
-startCleanupInterval();
+// Clean up orphaned containers from previous runs and start cleanup interval
+cleanupOrphanedContainers().then(() => {
+  startCleanupInterval();
+});
 
 /**
  * Acquire a new session
@@ -256,52 +259,6 @@ app.get("/:sessionId/stream/build", async (c) => {
     // Send final status
     await stream.writeSSE({
       data: JSON.stringify({ status: session.status, error: session.errorMessage }),
-      event: "complete",
-    });
-  });
-});
-
-/**
- * SSE stream for run output
- */
-app.get("/:sessionId/stream/run", async (c) => {
-  const sessionId = c.req.param("sessionId");
-  const session = sessionManager.getSession(sessionId);
-  
-  if (!session) {
-    return c.json({ error: "Session not found" }, 404);
-  }
-  
-  return streamSSE(c, async (stream) => {
-    // Send existing output
-    if (session.runOutput) {
-      await stream.writeSSE({
-        data: session.runOutput,
-        event: "output",
-      });
-    }
-    
-    const callback = async (data: string) => {
-      try {
-        await stream.writeSSE({
-          data: data,
-          event: "output",
-        });
-      } catch {
-        // Client disconnected
-      }
-    };
-    
-    sessionManager.addRunListener(sessionId, callback);
-    
-    // Keep alive while running
-    while (session.status === "running") {
-      await stream.sleep(100);
-    }
-    
-    // Send final status
-    await stream.writeSSE({
-      data: JSON.stringify({ status: session.status }),
       event: "complete",
     });
   });

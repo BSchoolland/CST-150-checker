@@ -15,7 +15,7 @@ import {
   runAppInContainer,
   stopAppInContainer,
 } from "../container-runner";
-import { runReview, resetReviewState } from "../review-runner";
+import { runReview } from "../review-runner";
 import { getAssignmentPart } from "../db";
 
 const app = new Hono();
@@ -116,8 +116,8 @@ app.post("/:sessionId/upload", async (c) => {
       errorMessage: null,
     });
     
-    // Reset review state
-    resetReviewState();
+    // Reset review state for this session
+    sessionManager.resetReviewState(sessionId);
     
     return c.json({ success: true, project: projectName });
     
@@ -164,7 +164,7 @@ app.post("/:sessionId/build", async (c) => {
   // Start code review in parallel if assignment selected
   if (session.selectedAssignmentPartId && session.csprojPath) {
     const projectDir = join(session.csprojPath, "..");
-    runReview(projectDir, session.selectedAssignmentPartId);
+    runReview(sessionId, projectDir, session.selectedAssignmentPartId);
   }
   
   return c.json({ success: true, message: "Build started" });
@@ -272,7 +272,7 @@ app.post("/:sessionId/reset", async (c) => {
     errorMessage: null,
   });
   
-  resetReviewState();
+  sessionManager.resetReviewState(sessionId);
   
   return c.json({ success: true });
 });

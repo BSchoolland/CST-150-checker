@@ -1,39 +1,47 @@
 /**
- * Review API Routes - Handles code review status and streaming
+ * Review API Routes - Handles code review status and streaming per session
  */
 
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import {
-  getReviewState,
-  addReviewStreamCallback,
-  addReviewStatusCallback,
-} from "../review-runner";
+import { sessionManager } from "../session-manager";
 
 const app = new Hono();
 
 /**
- * Get current review status
+ * Get review status for a session
  */
-app.get("/", (c) => {
-  return c.json(getReviewState());
+app.get("/:sessionId/status", (c) => {
+  const sessionId = c.req.param("sessionId");
+  const reviewState = sessionManager.getReviewState(sessionId);
+
+  if (!reviewState) {
+    return c.json({ error: "Session not found" }, 404);
+  }
+
+  return c.json(reviewState);
 });
 
 /**
- * SSE stream for review output
+ * SSE stream for review output with session ID
  */
-app.get("/stream", async (c) => {
-  const reviewState = getReviewState();
-  
+app.get("/:sessionId/stream", async (c) => {
+  const sessionId = c.req.param("sessionId");
+  const session = sessionManager.getSession(sessionId);
+
+  if (!session) {
+    return c.json({ error: "Session not found" }, 404);
+  }
+
   return streamSSE(c, async (stream) => {
     // Send existing output first
-    if (reviewState.output) {
+    if (session.reviewState.output) {
       await stream.writeSSE({
-        data: reviewState.output,
+        data: session.reviewState.output,
         event: "output",
       });
     }
-    
+
     const callback = async (data: string) => {
       try {
         await stream.writeSSE({
@@ -44,16 +52,18 @@ app.get("/stream", async (c) => {
         // Client disconnected
       }
     };
-    
-    addReviewStreamCallback(callback);
-    
+
+    sessionManager.addReviewStreamListener(sessionId, callback);
+
     // Keep connection alive while reviewing
-    let currentState = getReviewState();
+    let currentState = session.reviewState;
     while (currentState.status === "reviewing") {
       await stream.sleep(100);
-      currentState = getReviewState();
+      const updatedState = sessionManager.getReviewState(sessionId);
+      if (!updatedState) break;
+      currentState = updatedState;
     }
-    
+
     // Send final status
     await stream.writeSSE({
       data: JSON.stringify({
@@ -67,19 +77,24 @@ app.get("/stream", async (c) => {
 });
 
 /**
- * SSE stream for review status changes
+ * SSE stream for review status changes with session ID
  */
-app.get("/stream/status", async (c) => {
-  const reviewState = getReviewState();
-  
+app.get("/:sessionId/stream/status", async (c) => {
+  const sessionId = c.req.param("sessionId");
+  const session = sessionManager.getSession(sessionId);
+
+  if (!session) {
+    return c.json({ error: "Session not found" }, 404);
+  }
+
   return streamSSE(c, async (stream) => {
     // Send initial state
     await stream.writeSSE({
-      data: JSON.stringify(reviewState),
+      data: JSON.stringify(session.reviewState),
       event: "review-status",
     });
-    
-    const callback = async (status: typeof reviewState) => {
+
+    const callback = async (status: typeof session.reviewState) => {
       try {
         await stream.writeSSE({
           data: JSON.stringify(status),
@@ -89,11 +104,11 @@ app.get("/stream/status", async (c) => {
         // Client disconnected
       }
     };
-    
-    addReviewStatusCallback(callback);
-    
-    // Keep connection alive
-    while (true) {
+
+    sessionManager.addReviewStatusListener(sessionId, callback);
+
+    // Keep connection alive while session exists
+    while (sessionManager.getSession(sessionId)) {
       await stream.sleep(30000);
     }
   });

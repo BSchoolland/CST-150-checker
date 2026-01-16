@@ -1,10 +1,9 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useWorkflow } from "@/hooks/useWorkflow";
-import { useSSE } from "@/hooks/useSSE";
 import {
   Play,
   Check,
@@ -16,8 +15,6 @@ import {
 
 export function RunStep() {
   const {
-    runOutput,
-    appendRunOutput,
     stepStatuses,
     setStepStatus,
     goToStep,
@@ -27,9 +24,7 @@ export function RunStep() {
 
   const outputRef = useRef<HTMLPreElement>(null);
   const hasStartedRun = useRef(false);
-  
-  // Button turns green when we have any application output (including "Application started")
-  const hasOutput = runOutput.length > 0;
+  const [hasInteracted, setHasInteracted] = useState(false);
 
   // Track if we should show VNC - show it once we're processing or completed
   const showVnc = stepStatuses.run === "processing" || stepStatuses.run === "completed" || stepStatuses.run === "warning";
@@ -44,32 +39,11 @@ export function RunStep() {
       hasStartedRun.current = true;
       setStepStatus("run", "processing");
       clearError();
-      api.startRun().catch((err) => {
+      api.startRun().catch((err: Error) => {
         setError(err.message, "run");
       });
     }
   }, [stepStatuses.build, stepStatuses.run, setStepStatus, setError, clearError]);
-
-  // Handle SSE stream
-  const handleMessage = useCallback(
-    (event: string, data: string) => {
-      if (event === "output") {
-        appendRunOutput(data);
-      }
-    },
-    [appendRunOutput]
-  );
-
-  useSSE(stepStatuses.run === "processing" ? api.streams.run : null, {
-    onMessage: handleMessage,
-  });
-
-  // Auto-scroll output
-  useEffect(() => {
-    if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
-    }
-  }, [runOutput]);
 
   const status = stepStatuses.run;
   const isFailed = status === "failed";
@@ -88,7 +62,7 @@ export function RunStep() {
     setTimeout(() => {
       hasStartedRun.current = true;
       setStepStatus("run", "processing");
-      api.startRun().catch((err) => {
+      api.startRun().catch((err: Error) => {
         setError(err.message, "run");
       });
     }, 100);
@@ -103,7 +77,7 @@ export function RunStep() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" onClick={() => setHasInteracted(true)}>
       <Card className="border-slate-800 bg-slate-900/50">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
@@ -135,7 +109,7 @@ export function RunStep() {
                   onClick={handleDone} 
                   className={cn(
                     "gap-2",
-                    hasOutput && "bg-emerald-600 hover:bg-emerald-700 text-white"
+                    hasInteracted && "bg-emerald-600 hover:bg-emerald-700 text-white"
                   )}
                 >
                   <Check className="w-4 h-4" />
@@ -193,7 +167,7 @@ export function RunStep() {
                 isFailed && "border border-rose-500/20"
               )}
             >
-              {runOutput || "Waiting for application output..."}
+              {/* Run output streaming disabled */}
             </pre>
           </div>
 

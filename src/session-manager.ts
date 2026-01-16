@@ -5,6 +5,8 @@
  * Each session gets an isolated Docker container with its own VNC display.
  */
 
+import type { ReviewState, ReviewResult } from "./types";
+
 export const MAX_CONCURRENT_SESSIONS = 3;
 export const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 export const HEARTBEAT_TIMEOUT_MS = 60 * 1000; // 60 seconds without heartbeat = dead session
@@ -40,6 +42,9 @@ export interface Session {
   
   // Assignment
   selectedAssignmentPartId: number | null;
+  
+  // Review state (per-session)
+  reviewState: ReviewState;
 }
 
 export type SessionCallback = (session: Session) => void;
@@ -53,7 +58,10 @@ class SessionManager {
   // Callbacks for SSE streaming per session
   sessionCallbacks: Map<string, SessionCallback[]> = new Map();
   buildCallbacks: Map<string, ((data: string) => void)[]> = new Map();
-  runCallbacks: Map<string, ((data: string) => void)[]> = new Map();
+  
+  // Review callbacks per session
+  reviewStreamCallbacks: Map<string, ((data: string) => void)[]> = new Map();
+  reviewStatusCallbacks: Map<string, ((status: ReviewState) => void)[]> = new Map();
   
   // Queue promotion callbacks (for notifying queued users)
   queueCallbacks: Map<string, ((position: number) => void)[]> = new Map();
@@ -110,12 +118,19 @@ class SessionManager {
       runOutput: '',
       errorMessage: null,
       selectedAssignmentPartId: null,
+      reviewState: {
+        status: "idle",
+        result: null,
+        output: "",
+        errorMessage: null,
+      },
     };
     
     this.activeSessions.set(sessionId, session);
     this.sessionCallbacks.set(sessionId, []);
     this.buildCallbacks.set(sessionId, []);
-    this.runCallbacks.set(sessionId, []);
+    this.reviewStreamCallbacks.set(sessionId, []);
+    this.reviewStatusCallbacks.set(sessionId, []);
     
     return { session };
   }
@@ -199,24 +214,6 @@ class SessionManager {
     });
   }
 
-  /**
-   * Emit run output to listeners
-   */
-  emitRunOutput(sessionId: string, data: string): void {
-    const session = this.activeSessions.get(sessionId);
-    if (!session) return;
-    
-    session.runOutput += data;
-    
-    const callbacks = this.runCallbacks.get(sessionId) || [];
-    callbacks.forEach(cb => {
-      try {
-        cb(data);
-      } catch (e) {
-        // Listener disconnected
-      }
-    });
-  }
 
   /**
    * Add a session update listener
@@ -236,13 +233,94 @@ class SessionManager {
     this.buildCallbacks.set(sessionId, callbacks);
   }
 
+
   /**
-   * Add a run output listener
+   * Add a review stream output listener
    */
-  addRunListener(sessionId: string, callback: (data: string) => void): void {
-    const callbacks = this.runCallbacks.get(sessionId) || [];
+  addReviewStreamListener(sessionId: string, callback: (data: string) => void): void {
+    const callbacks = this.reviewStreamCallbacks.get(sessionId) || [];
     callbacks.push(callback);
-    this.runCallbacks.set(sessionId, callbacks);
+    this.reviewStreamCallbacks.set(sessionId, callbacks);
+  }
+
+  /**
+   * Add a review status change listener
+   */
+  addReviewStatusListener(sessionId: string, callback: (status: ReviewState) => void): void {
+    const callbacks = this.reviewStatusCallbacks.get(sessionId) || [];
+    callbacks.push(callback);
+    this.reviewStatusCallbacks.set(sessionId, callbacks);
+  }
+
+  /**
+   * Emit review output to session listeners
+   */
+  emitReviewOutput(sessionId: string, data: string): void {
+    const session = this.activeSessions.get(sessionId);
+    if (!session) return;
+    
+    session.reviewState.output += data;
+    
+    const callbacks = this.reviewStreamCallbacks.get(sessionId) || [];
+    callbacks.forEach(cb => {
+      try {
+        cb(data);
+      } catch (e) {
+        // Listener disconnected
+      }
+    });
+  }
+
+  /**
+   * Emit review status change to session listeners
+   */
+  emitReviewStatusChange(sessionId: string): void {
+    const session = this.activeSessions.get(sessionId);
+    if (!session) return;
+    
+    const callbacks = this.reviewStatusCallbacks.get(sessionId) || [];
+    callbacks.forEach(cb => {
+      try {
+        cb(session.reviewState);
+      } catch (e) {
+        // Listener disconnected
+      }
+    });
+  }
+
+  /**
+   * Update review state for a session
+   */
+  updateReviewState(sessionId: string, updates: Partial<ReviewState>): void {
+    const session = this.activeSessions.get(sessionId);
+    if (!session) return;
+    
+    Object.assign(session.reviewState, updates);
+    this.emitReviewStatusChange(sessionId);
+  }
+
+  /**
+   * Reset review state for a session
+   */
+  resetReviewState(sessionId: string): void {
+    const session = this.activeSessions.get(sessionId);
+    if (!session) return;
+    
+    session.reviewState = {
+      status: "idle",
+      result: null,
+      output: "",
+      errorMessage: null,
+    };
+  }
+
+  /**
+   * Get review state for a session
+   */
+  getReviewState(sessionId: string): ReviewState | null {
+    const session = this.activeSessions.get(sessionId);
+    if (!session) return null;
+    return session.reviewState;
   }
 
   /**
@@ -278,7 +356,8 @@ class SessionManager {
     // Clean up callbacks
     this.sessionCallbacks.delete(sessionId);
     this.buildCallbacks.delete(sessionId);
-    this.runCallbacks.delete(sessionId);
+    this.reviewStreamCallbacks.delete(sessionId);
+    this.reviewStatusCallbacks.delete(sessionId);
     
     // Remove session
     this.activeSessions.delete(sessionId);
@@ -331,12 +410,19 @@ class SessionManager {
       runOutput: '',
       errorMessage: null,
       selectedAssignmentPartId: null,
+      reviewState: {
+        status: "idle",
+        result: null,
+        output: "",
+        errorMessage: null,
+      },
     };
     
     this.activeSessions.set(sessionId, session);
     this.sessionCallbacks.set(sessionId, []);
     this.buildCallbacks.set(sessionId, []);
-    this.runCallbacks.set(sessionId, []);
+    this.reviewStreamCallbacks.set(sessionId, []);
+    this.reviewStatusCallbacks.set(sessionId, []);
     
     // Move queue listeners to promotion notification
     const queueCallbacks = this.queueCallbacks.get(sessionId) || [];

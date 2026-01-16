@@ -33,7 +33,7 @@ export function BuildStep() {
       hasStartedBuild.current = true;
       setStepStatus("build", "processing");
       clearError();
-      api.startBuild().catch((err) => {
+      api.startBuild().catch((err: Error) => {
         setError(err.message, "build");
       });
     }
@@ -63,7 +63,7 @@ export function BuildStep() {
   );
 
   useSSE(
-    stepStatuses.build === "processing" ? api.streams.build : null,
+    stepStatuses.build === "processing" ? api.getStreamUrls().build : null,
     { onMessage: handleMessage }
   );
 

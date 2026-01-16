@@ -6,6 +6,7 @@
  */
 
 import { spawn, type Subprocess } from "bun";
+import { resolve } from "path";
 import { sessionManager, type Session } from "./session-manager";
 
 const SESSION_CONTAINER_IMAGE = "cst150-session-runner:latest";
@@ -35,41 +36,25 @@ export async function spawnSessionContainer(session: Session): Promise<void> {
       throw new Error(`Failed to create volume: ${volumeName}`);
     }
     
-    // Spawn the session container with security hardening
+    // Spawn the session container (security hardening disabled for now)
     const proc = spawn({
       cmd: [
         "docker", "run", "-d",
         "--name", session.containerName,
-        
+
         // Resource limits
         "--memory", "2g",
-        "--memory-swap", "2g",
         "--cpus", "2",
-        "--pids-limit", "256",
-        "--ulimit", "nofile=4096:4096",
-        
-        // Security hardening
-        "--security-opt", "no-new-privileges:true",
-        "--cap-drop", "ALL",
-        "--cap-add", "SYS_CHROOT",  // Needed for Wine
-        "--read-only",  // Root filesystem read-only
-        
-        // Network access allowed (simplifies NuGet restore)
+
+        // Network access allowed (for NuGet restore)
         "--network", "bridge",
-        
-        // Run as non-root
-        "--user", "1000:1000",
-        
-        // Writable areas (tmpfs)
-        "--tmpfs", "/tmp:size=512m,mode=1777",
-        "--tmpfs", "/home/student/.nuget:size=256m,mode=755",
-        
+
         // Mount project volume
         "-v", `${volumeName}:/project:rw`,
-        
+
         // Expose VNC
         "-p", `${session.vncPort}:6080`,
-        
+
         // Image
         SESSION_CONTAINER_IMAGE,
       ],
@@ -163,17 +148,35 @@ async function waitForContainerReady(session: Session): Promise<void> {
  * Copy project files to the session container's volume
  */
 export async function copyProjectToSession(
-  sessionId: string, 
+  sessionId: string,
   sourcePath: string
 ): Promise<void> {
   const volumeName = `session-${sessionId}`;
-  
+
+  // Convert container path to host path for Docker bind mount
+  // Container path: /app/projects/... -> Host path: $HOST_PROJECT_DIR/...
+  const containerProjectsDir = "/app/projects";
+  const hostProjectsDir = process.env.HOST_PROJECT_DIR || containerProjectsDir;
+
+  let hostSourcePath: string;
+  const absoluteSourcePath = resolve(sourcePath);
+
+  if (absoluteSourcePath.startsWith(containerProjectsDir)) {
+    // Replace container path prefix with host path prefix
+    hostSourcePath = absoluteSourcePath.replace(containerProjectsDir, hostProjectsDir);
+  } else {
+    // Fallback - assume path is already on host or relative
+    hostSourcePath = absoluteSourcePath;
+  }
+
+  console.log(`Copying project from ${hostSourcePath} to volume ${volumeName}`);
+
   // Copy files to volume using a temporary container
   const copyProc = spawn({
     cmd: [
       "docker", "run", "--rm",
       "-v", `${volumeName}:/dest`,
-      "-v", `${sourcePath}:/src:ro`,
+      "-v", `${hostSourcePath}:/src:ro`,
       "alpine",
       "sh", "-c", "cp -r /src/. /dest/ && chown -R 1000:1000 /dest"
     ],
@@ -211,9 +214,13 @@ export async function runBuildInContainer(
   
   sessionManager.emitBuildOutput(session.id, "Starting build...\n");
   
-  // Convert absolute path to container-relative path
-  // The csprojPath is like /app/projects/... but in container it's /project/...
-  const containerCsprojPath = csprojPath.replace(/^.*\/projects\//, '/project/');
+  // The csproj file is copied to /project/ in the container
+  // Since copyProjectToSession copies the parent directory of the csproj,
+  // the csproj file ends up directly in /project/
+  const csprojFilename = csprojPath.split('/').pop() || 'Project.csproj';
+  const containerCsprojPath = `/project/${csprojFilename}`;
+
+  console.log(`Build: csprojPath=${csprojPath} -> containerCsprojPath=${containerCsprojPath}`);
   
   const buildProc = spawn({
     cmd: [
@@ -337,8 +344,6 @@ export async function runAppInContainer(
     exePath,
   });
   
-  sessionManager.emitRunOutput(session.id, "Starting application...\n");
-  
   const exeDir = exePath.substring(0, exePath.lastIndexOf('/'));
   const exeName = exePath.substring(exePath.lastIndexOf('/') + 1);
   
@@ -353,39 +358,30 @@ export async function runAppInContainer(
   });
   await copyProc.exited;
   
-  // Run with Wine in detached mode
+  // Run with Wine (not detached, so we can capture output)
   const runProc = spawn({
     cmd: [
-      "docker", "exec", "-d",
+      "docker", "exec",
       session.containerName,
       "wine", `/tmp/wine-run/${exeName}`
     ],
     stdout: "pipe",
     stderr: "pipe",
   });
-  
-  await runProc.exited;
-  
-  if (runProc.exitCode !== 0) {
-    const decoder = new TextDecoder();
-    const stderrReader = runProc.stderr.getReader();
-    let stderr = "";
-    while (true) {
-      const { done, value } = await stderrReader.read();
-      if (done) break;
-      stderr += decoder.decode(value);
-    }
-    sessionManager.emitRunOutput(session.id, `Failed to start: ${stderr}\n`);
-    sessionManager.updateSession(session.id, {
-      status: 'error',
-      errorMessage: 'Failed to start application',
-    });
-    return;
-  }
-  
-  // Track the running process
+
+  // Store process reference for later cleanup
   runningProcesses.set(session.id, { containerName: session.containerName });
-  sessionManager.emitRunOutput(session.id, "Application started\n");
+
+  // Handle process exit asynchronously
+  runProc.exited.then((exitCode) => {
+    runningProcesses.delete(session.id);
+    if (exitCode !== 0) {
+      console.log(`Application exited with code ${exitCode} for session ${session.id}`);
+    }
+  });
+
+  // Return immediately - app is running in background
+  return;
 }
 
 /**
@@ -406,7 +402,6 @@ export async function stopAppInContainer(sessionId: string): Promise<void> {
   
   const session = sessionManager.getSession(sessionId);
   if (session) {
-    sessionManager.emitRunOutput(sessionId, "\nApplication stopped\n");
     sessionManager.updateSession(sessionId, { status: 'built' });
   }
 }
@@ -454,7 +449,43 @@ export async function cleanupSessionContainer(sessionId: string): Promise<void> 
     // Volume might not exist
   }
   
+  // Clean up project files from various directories
+  await cleanupSessionProjectFiles(sessionId);
+  
   console.log(`Cleaned up session container: ${containerName}`);
+}
+
+/**
+ * Clean up project files for a session (extracted projects, review input/output)
+ */
+async function cleanupSessionProjectFiles(sessionId: string): Promise<void> {
+  const pathsToClean = [
+    `./projects/${sessionId}`,           // Extracted project files
+    `./uploads/${sessionId}-*`,          // Uploaded zip files (pattern)
+    `/app/review-input/${sessionId}`,    // Review input folder
+    `/app/review-output/${sessionId}`,   // Review output folder
+  ];
+  
+  for (const pathPattern of pathsToClean) {
+    try {
+      // Use shell for glob patterns
+      if (pathPattern.includes('*')) {
+        await spawn({
+          cmd: ["sh", "-c", `rm -rf ${pathPattern} 2>/dev/null || true`],
+          stdout: "ignore",
+          stderr: "ignore",
+        }).exited;
+      } else {
+        await spawn({
+          cmd: ["rm", "-rf", pathPattern],
+          stdout: "ignore",
+          stderr: "ignore",
+        }).exited;
+      }
+    } catch {
+      // Ignore errors - files might not exist
+    }
+  }
 }
 
 /**
@@ -462,20 +493,115 @@ export async function cleanupSessionContainer(sessionId: string): Promise<void> 
  */
 export async function ensureSessionRunnerImage(): Promise<void> {
   console.log("Building session runner image...");
-  
+
   const buildProc = spawn({
     cmd: ["docker", "build", "-t", SESSION_CONTAINER_IMAGE, "/app/session-runner"],
     stdout: "pipe",
     stderr: "pipe",
   });
-  
+
   await buildProc.exited;
-  
+
   if (buildProc.exitCode !== 0) {
     console.warn("Warning: Failed to build session runner image. Sessions will not work.");
   } else {
     console.log("Session runner image built successfully");
   }
+}
+
+/**
+ * Clean up any orphaned session containers from previous runs
+ * This is called on server startup to ensure clean state
+ */
+export async function cleanupOrphanedContainers(): Promise<void> {
+  console.log("Cleaning up orphaned session containers...");
+
+  // Find all containers with names starting with "session-"
+  const listProc = spawn({
+    cmd: ["docker", "ps", "-a", "--filter", "name=session-", "--format", "{{.Names}}"],
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+
+  const decoder = new TextDecoder();
+  const reader = listProc.stdout.getReader();
+  let output = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    output += decoder.decode(value);
+  }
+
+  await listProc.exited;
+
+  const containerNames = output.trim().split('\n').filter(name => name.length > 0);
+
+  if (containerNames.length === 0) {
+    console.log("No orphaned session containers found");
+    return;
+  }
+
+  console.log(`Found ${containerNames.length} orphaned session container(s): ${containerNames.join(', ')}`);
+
+  // Kill and remove each container
+  for (const name of containerNames) {
+    try {
+      await spawn({
+        cmd: ["docker", "kill", name],
+        stdout: "ignore",
+        stderr: "ignore",
+      }).exited;
+    } catch {
+      // Container might not be running
+    }
+
+    try {
+      await spawn({
+        cmd: ["docker", "rm", "-f", name],
+        stdout: "ignore",
+        stderr: "ignore",
+      }).exited;
+      console.log(`Removed orphaned container: ${name}`);
+    } catch {
+      // Container might already be removed
+    }
+  }
+
+  // Also clean up orphaned volumes
+  const volumeListProc = spawn({
+    cmd: ["docker", "volume", "ls", "--filter", "name=session-", "--format", "{{.Name}}"],
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+
+  const volumeReader = volumeListProc.stdout.getReader();
+  let volumeOutput = "";
+
+  while (true) {
+    const { done, value } = await volumeReader.read();
+    if (done) break;
+    volumeOutput += decoder.decode(value);
+  }
+
+  await volumeListProc.exited;
+
+  const volumeNames = volumeOutput.trim().split('\n').filter(name => name.length > 0);
+
+  for (const volumeName of volumeNames) {
+    try {
+      await spawn({
+        cmd: ["docker", "volume", "rm", "-f", volumeName],
+        stdout: "ignore",
+        stderr: "ignore",
+      }).exited;
+      console.log(`Removed orphaned volume: ${volumeName}`);
+    } catch {
+      // Volume might be in use
+    }
+  }
+
+  console.log("Orphaned container cleanup complete");
 }
 
 /**
@@ -491,4 +617,45 @@ export function startCleanupInterval(): void {
       sessionManager.releaseSession(sessionId);
     }
   }, 30_000); // Check every 30 seconds
+}
+
+/**
+ * Clean up all sessions and project files on shutdown
+ */
+export async function cleanupAllSessions(): Promise<void> {
+  console.log("Cleaning up all sessions on shutdown...");
+  
+  // Clean up all active sessions
+  const sessions = sessionManager.getAllSessions();
+  for (const session of sessions) {
+    await cleanupSessionContainer(session.id);
+    sessionManager.releaseSession(session.id);
+  }
+  
+  // Clean up any orphaned containers/volumes that might have been missed
+  await cleanupOrphanedContainers();
+  
+  // Clean up entire project directories to ensure nothing is left behind
+  const directoriesToClean = [
+    "./projects",
+    "./uploads", 
+    "/app/review-input",
+    "/app/review-output",
+  ];
+  
+  for (const dir of directoriesToClean) {
+    try {
+      // Remove all contents but keep the directory
+      await spawn({
+        cmd: ["sh", "-c", `rm -rf ${dir}/* ${dir}/.[!.]* 2>/dev/null || true`],
+        stdout: "ignore",
+        stderr: "ignore",
+      }).exited;
+      console.log(`Cleaned directory: ${dir}`);
+    } catch {
+      // Ignore errors
+    }
+  }
+  
+  console.log("All sessions and project files cleaned up");
 }

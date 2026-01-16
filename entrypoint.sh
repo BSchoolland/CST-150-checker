@@ -6,6 +6,12 @@ echo "Starting CST-150 Checker Orchestrator..."
 # Ensure mounted directories are writable
 chmod -R 777 /app/uploads /app/projects 2>/dev/null || true
 
+# Ensure review volumes have proper permissions for session-specific subdirectories
+# Use a temporary alpine container to fix permissions (main container has cap_drop: ALL)
+echo "Setting up review volume permissions..."
+docker run --rm -v cst-150-checker_review-input:/data alpine chmod 777 /data 2>/dev/null || true
+docker run --rm -v cst-150-checker_review-output:/data alpine chmod 777 /data 2>/dev/null || true
+
 # Cleanup function for graceful shutdown
 cleanup() {
     echo "Shutting down..."

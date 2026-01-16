@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/api";
+import { api, type AssignmentPart } from "@/lib/api";
 import { useWorkflow } from "@/hooks/useWorkflow";
 import { BookOpen, CheckCircle2 } from "lucide-react";
 
@@ -57,11 +57,11 @@ export function AssignmentSelect() {
 
         {/* Assignment cards */}
         <RadioGroup
-          value={selectedAssignmentId?.toString()}
+          value={selectedAssignmentId?.toString() ?? ""}
           onValueChange={(value) => handleSelect(parseInt(value))}
           className="space-y-6"
         >
-          {Object.entries(groupedAssignments).map(([assignmentNum, parts]) => (
+          {Object.entries(groupedAssignments).map(([assignmentNum, parts]: [string, AssignmentPart[]]) => (
             <div key={assignmentNum}>
               <h2 className="text-sm font-medium text-slate-500 mb-3 px-1">
                 Assignment {assignmentNum}

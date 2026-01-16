@@ -84,9 +84,9 @@ export function ReviewStep() {
     [appendReviewOutput]
   );
 
-  useSSE(api.streams.reviewStatus, { onMessage: handleStatusMessage });
+  useSSE(api.getStreamUrls().reviewStatus, { onMessage: handleStatusMessage });
   useSSE(
-    reviewStatus === "reviewing" ? api.streams.review : null,
+    reviewStatus === "reviewing" ? api.getStreamUrls().review : null,
     { onMessage: handleOutputMessage }
   );
 

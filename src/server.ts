@@ -11,6 +11,7 @@ import { cors } from "hono/cors";
 import { existsSync } from "fs";
 import { resolve } from "path";
 import { seedDatabase } from "./db";
+import { cleanupAllSessions } from "./container-runner";
 
 // Import route modules
 import sessionRoutes from "./routes/session";
@@ -21,6 +22,17 @@ import debugRoutes from "./routes/debug";
 
 // Initialize database on startup
 seedDatabase();
+
+// Graceful shutdown handler - clean up all sessions and project files
+async function handleShutdown(signal: string) {
+  console.log(`\nReceived ${signal}, cleaning up all sessions...`);
+  await cleanupAllSessions();
+  console.log("Cleanup complete, exiting.");
+  process.exit(0);
+}
+
+process.on("SIGINT", () => handleShutdown("SIGINT"));
+process.on("SIGTERM", () => handleShutdown("SIGTERM"));
 
 const app = new Hono();
 
