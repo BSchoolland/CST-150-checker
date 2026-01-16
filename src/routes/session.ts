@@ -94,6 +94,9 @@ app.post("/:sessionId/heartbeat", (c) => {
   
   const success = sessionManager.heartbeat(sessionId);
   if (!success) {
+    // Log when heartbeat fails to help debug session issues
+    const allSessions = sessionManager.getAllSessions();
+    console.warn(`[heartbeat] Session ${sessionId} not found. Active sessions: ${allSessions.map(s => s.id).join(', ') || 'none'}`);
     return c.json({ error: "Session not found" }, 404);
   }
   

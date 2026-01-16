@@ -138,7 +138,7 @@ async function waitForContainerReady(session: Session): Promise<void> {
     }
     
     // Wait a bit before checking again
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 3000));
   }
   
   throw new Error("Container failed to become ready within timeout");

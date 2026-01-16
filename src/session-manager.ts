@@ -147,8 +147,13 @@ class SessionManager {
    */
   heartbeat(sessionId: string): boolean {
     const session = this.activeSessions.get(sessionId);
-    if (!session) return false;
+    if (!session) {
+      console.log(`[heartbeat] Session ${sessionId.slice(0, 8)} not in activeSessions`);
+      return false;
+    }
+    const oldTime = session.lastHeartbeat;
     session.lastHeartbeat = new Date();
+    console.log(`[heartbeat] Session ${sessionId.slice(0, 8)} updated: ${Math.round((session.lastHeartbeat.getTime() - oldTime.getTime()) / 1000)}s since last`);
     return true;
   }
 
@@ -455,7 +460,12 @@ class SessionManager {
       const sessionAge = now - session.createdAt.getTime();
       
       // Kill if no heartbeat for 60 seconds OR session older than 10 minutes
-      if (timeSinceHeartbeat > HEARTBEAT_TIMEOUT_MS || sessionAge > SESSION_TIMEOUT_MS) {
+      // This is a hard limit - even active reviews get killed to prevent death loops
+      if (timeSinceHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+        console.log(`[timeout] Session ${sessionId.slice(0, 8)} timed out: no heartbeat for ${Math.round(timeSinceHeartbeat / 1000)}s (limit: ${HEARTBEAT_TIMEOUT_MS / 1000}s)`);
+        timedOut.push(sessionId);
+      } else if (sessionAge > SESSION_TIMEOUT_MS) {
+        console.log(`[timeout] Session ${sessionId.slice(0, 8)} timed out: session age ${Math.round(sessionAge / 1000 / 60)}min (limit: ${SESSION_TIMEOUT_MS / 1000 / 60}min)`);
         timedOut.push(sessionId);
       }
     }

@@ -205,12 +205,20 @@ function App() {
   useEffect(() => {
     if (sessionState !== 'active') return;
     
-    const interval = setInterval(() => {
-      api.heartbeat();
+    const interval = setInterval(async () => {
+      try {
+        await api.heartbeat();
+      } catch (err) {
+        // Session was lost (server restart, timeout, etc.)
+        console.error("Heartbeat failed:", err);
+        const message = err instanceof Error ? err.message : 'Session lost';
+        setSessionState('error');
+        setSessionError(message);
+      }
     }, 10_000);
     
     return () => clearInterval(interval);
-  }, [sessionState]);
+  }, [sessionState, setSessionState, setSessionError]);
 
   // Handle page unload
   useEffect(() => {

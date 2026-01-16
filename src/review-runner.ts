@@ -155,6 +155,8 @@ tools:
   task: false
   todowrite: false
   todoread: false
+  bash: true
+  submit_review: true
 ---
 ${agentSystemPrompt}
 `;
