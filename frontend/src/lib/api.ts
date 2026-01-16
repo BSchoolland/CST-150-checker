@@ -1,262 +1,231 @@
-/**
- * API client for the CST-150 Checker backend
- * 
- * Session-based multi-user API with queue support.
- */
+const API_BASE = "/api";
 
-const API_BASE = '/api';
-
+// Types
 export interface AssignmentPart {
   id: number;
-  assignment_id: number;
-  assignment_name: string;
+  assignment_name?: string;
   part_number: number;
   title: string;
   description: string;
-  requirements: string; // JSON string
+  requirements: string;
+}
+
+export interface RequirementResult {
+  requirement: string;
+  status: "met" | "partial" | "not_met";
+  feedback: string;
+  points: number;
+}
+
+export interface Issue {
+  severity: "error" | "warning" | "info";
+  file?: string;
+  line?: number;
+  message: string;
+  suggestion?: string;
 }
 
 export interface ReviewResult {
-  summary: string;
   overallScore?: number;
-  requirementResults?: Array<{
-    requirement: string;
-    status: 'met' | 'partial' | 'not_met';
-    feedback: string;
-    points: number;
-  }>;
-  issues?: Array<{
-    severity: 'error' | 'warning' | 'info';
-    file?: string;
-    line?: number;
-    message: string;
-    suggestion?: string;
-  }>;
+  summary: string;
+  requirementResults?: RequirementResult[];
+  issues?: Issue[];
   positives?: string[];
 }
 
-export interface SessionStatus {
-  status: 'pending' | 'starting' | 'ready' | 'building' | 'built' | 'running' | 'error' | 'queued';
-  sessionId?: string;
-  vncPort?: number;
-  queuePosition?: number;
-  projectName?: string;
-  buildOutput?: string;
-  runOutput?: string;
-  errorMessage?: string;
-  selectedAssignmentPartId?: number;
+export interface ReviewStatus {
+  status: "idle" | "reviewing" | "completed";
+  result?: ReviewResult;
 }
 
-export interface ReviewStatus {
-  status: 'idle' | 'reviewing' | 'completed' | 'error';
-  output?: string;
-  result?: ReviewResult;
+export interface SessionStatus {
+  status: string;
+  queuePosition?: number;
+  vncPort?: number;
+  projectName?: string;
+  selectedAssignmentPartId?: number;
+  buildOutput?: string;
+  runOutput?: string;
   errorMessage?: string;
 }
 
 export interface AcquireSessionResult {
-  status: 'acquired' | 'queued';
+  status: "queued" | "acquired";
   sessionId: string;
-  vncPort?: number;
   queuePosition?: number;
-  message?: string;
+  vncPort?: number;
 }
 
-class ApiClient {
-  private sessionId: string | null = null;
+export interface UploadResult {
+  project: string;
+}
 
-  /**
-   * Get the current session ID
-   */
-  getSessionId(): string | null {
-    return this.sessionId;
+// State - session ID is stored here after acquisition
+let sessionId: string | null = null;
+let vncPort: number | null = null;
+
+// API functions
+async function fetchJson<T>(
+  endpoint: string,
+  options?: RequestInit
+): Promise<T> {
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    credentials: "include",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(error.error || `Request failed: ${res.status}`);
   }
 
-  /**
-   * Set the session ID (for restoration from storage)
-   */
-  setSessionId(sessionId: string): void {
-    this.sessionId = sessionId;
-  }
+  return res.json();
+}
 
-  /**
-   * Acquire a new session
-   */
-  async acquireSession(): Promise<AcquireSessionResult> {
-    const res = await fetch(`${API_BASE}/session/acquire`, { method: 'POST' });
-    const data = await res.json() as AcquireSessionResult;
-    this.sessionId = data.sessionId;
-    return data;
+// Helper to ensure session ID exists
+function requireSessionId(): string {
+  if (!sessionId) {
+    throw new Error("Session not acquired. Call acquireSession first.");
   }
+  return sessionId;
+}
 
-  /**
-   * Get current session status
-   */
-  async getSessionStatus(): Promise<SessionStatus> {
-    if (!this.sessionId) {
-      throw new Error('No session acquired');
+export const api = {
+  // Session management
+  acquireSession: async (): Promise<AcquireSessionResult> => {
+    const result = await fetchJson<AcquireSessionResult>("/session/acquire", {
+      method: "POST",
+    });
+    sessionId = result.sessionId;
+    if (result.vncPort) {
+      vncPort = result.vncPort;
     }
-    const res = await fetch(`${API_BASE}/session/${this.sessionId}`);
-    return res.json();
-  }
+    return result;
+  },
 
-  /**
-   * Send heartbeat to keep session alive
-   */
-  async heartbeat(): Promise<void> {
-    if (!this.sessionId) return;
-    await fetch(`${API_BASE}/session/${this.sessionId}/heartbeat`, { method: 'POST' });
-  }
+  releaseSession: async (): Promise<void> => {
+    const sid = sessionId;
+    if (!sid) return;
+    sessionId = null;
+    vncPort = null;
+    // Use sendBeacon for page unload reliability
+    navigator.sendBeacon(`${API_BASE}/session/${sid}/release`);
+  },
 
-  /**
-   * Release the current session
-   */
-  async releaseSession(): Promise<void> {
-    if (!this.sessionId) return;
-    
-    // Use sendBeacon for page unload scenarios
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(`${API_BASE}/session/${this.sessionId}/release`);
-    } else {
-      await fetch(`${API_BASE}/session/${this.sessionId}/release`, { method: 'POST' });
-    }
-    
-    this.sessionId = null;
-  }
+  heartbeat: (): Promise<{ ok: boolean }> => {
+    const sid = requireSessionId();
+    return fetchJson(`/session/${sid}/heartbeat`, { method: "POST" });
+  },
 
-  /**
-   * Get all assignment parts
-   */
-  async getAssignmentParts(): Promise<AssignmentPart[]> {
-    const res = await fetch(`${API_BASE}/assignments/parts/all`);
-    return res.json();
-  }
+  getSessionStatus: (): Promise<SessionStatus> => {
+    const sid = requireSessionId();
+    return fetchJson(`/session/${sid}`);
+  },
 
-  /**
-   * Select an assignment for the current session
-   */
-  async selectAssignment(partId: number): Promise<void> {
-    if (!this.sessionId) {
-      throw new Error('No session acquired');
-    }
-    await fetch(`${API_BASE}/project/${this.sessionId}/select-assignment`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+  // Session ID getter/setter (for hooks that need access)
+  getSessionId: () => sessionId,
+  setSessionId: (id: string) => {
+    sessionId = id;
+  },
+
+  // Assignments
+  getAssignmentParts: (): Promise<AssignmentPart[]> =>
+    fetchJson("/assignments/parts/all"),
+
+  selectAssignment: (partId: number): Promise<void> => {
+    const sid = requireSessionId();
+    return fetchJson(`/project/${sid}/select-assignment`, {
+      method: "POST",
       body: JSON.stringify({ partId }),
     });
-  }
+  },
 
-  /**
-   * Upload a project file
-   */
-  async uploadFile(file: File): Promise<{ project: string }> {
-    if (!this.sessionId) {
-      throw new Error('No session acquired');
-    }
-    
+  // File operations
+  uploadFile: async (file: File): Promise<UploadResult> => {
+    const sid = requireSessionId();
     const formData = new FormData();
-    formData.append('file', file);
-    
-    const res = await fetch(`${API_BASE}/project/${this.sessionId}/upload`, {
-      method: 'POST',
+    formData.append("file", file);
+
+    const res = await fetch(`${API_BASE}/project/${sid}/upload`, {
+      method: "POST",
+      credentials: "include",
       body: formData,
     });
-    
+
     if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || 'Upload failed');
+      const error = await res.json().catch(() => ({ error: "Upload failed" }));
+      throw new Error(error.error || `Upload failed: ${res.status}`);
     }
-    
+
     return res.json();
-  }
+  },
 
-  /**
-   * Start building the project
-   */
-  async startBuild(): Promise<void> {
-    if (!this.sessionId) {
-      throw new Error('No session acquired');
+  // Build/Run operations
+  startBuild: (): Promise<void> => {
+    const sid = requireSessionId();
+    return fetchJson(`/project/${sid}/build`, { method: "POST" });
+  },
+
+  startRun: (): Promise<void> => {
+    const sid = requireSessionId();
+    return fetchJson(`/project/${sid}/run`, { method: "POST" });
+  },
+
+  stop: (): Promise<void> => {
+    const sid = requireSessionId();
+    return fetchJson(`/project/${sid}/stop`, { method: "POST" });
+  },
+
+  reset: (): Promise<void> => {
+    const sid = requireSessionId();
+    return fetchJson(`/project/${sid}/reset`, { method: "POST" });
+  },
+
+  // Review
+  getReviewStatus: (): Promise<ReviewStatus> => {
+    const sid = requireSessionId();
+    return fetchJson(`/review/${sid}/status`);
+  },
+
+  startReview: (): Promise<void> => {
+    const sid = requireSessionId();
+    return fetchJson(`/review/${sid}/start`, { method: "POST" });
+  },
+
+  // VNC
+  setVncPort: (port: number) => {
+    vncPort = port;
+  },
+
+  getVncPort: () => vncPort,
+
+  getVncUrl: () => {
+    if (!vncPort) return "";
+    // VNC is served directly from session container on its own port
+    // Session containers expose noVNC on ports 6081-6083
+    return `http://${window.location.hostname}:${vncPort}/vnc.html?autoconnect=true&resize=scale`;
+  },
+
+  // SSE stream URLs (need session ID)
+  getStreamUrls: () => {
+    const sid = sessionId;
+    if (!sid) {
+      return {
+        build: "",
+        status: "",
+        review: "",
+        reviewStatus: "",
+      };
     }
-    
-    const res = await fetch(`${API_BASE}/project/${this.sessionId}/build`, { method: 'POST' });
-    
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || 'Build failed to start');
-    }
-  }
-
-  /**
-   * Start running the application
-   */
-  async startRun(): Promise<void> {
-    if (!this.sessionId) {
-      throw new Error('No session acquired');
-    }
-    
-    const res = await fetch(`${API_BASE}/project/${this.sessionId}/run`, { method: 'POST' });
-    
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || 'Failed to start application');
-    }
-  }
-
-  /**
-   * Stop the running application
-   */
-  async stop(): Promise<void> {
-    if (!this.sessionId) return;
-    await fetch(`${API_BASE}/project/${this.sessionId}/stop`, { method: 'POST' });
-  }
-
-  /**
-   * Reset the session project state
-   */
-  async reset(): Promise<void> {
-    if (!this.sessionId) return;
-    await fetch(`${API_BASE}/project/${this.sessionId}/reset`, { method: 'POST' });
-  }
-
-  /**
-   * Get review status
-   */
-  async getReviewStatus(): Promise<ReviewStatus> {
-    const res = await fetch(`${API_BASE}/review`);
-    return res.json();
-  }
-
-  /**
-   * Get VNC URL for the current session
-   */
-  getVncUrl(): string {
-    // Session status should have been fetched to get vncPort
-    // For now, use the stored session data or default
-    const port = this.currentVncPort || 6081;
-    return `${window.location.protocol}//${window.location.hostname}:${port}/vnc.html?autoconnect=true&resize=scale`;
-  }
-
-  // Store VNC port when session is acquired
-  private currentVncPort: number | null = null;
-  
-  setVncPort(port: number): void {
-    this.currentVncPort = port;
-  }
-
-  /**
-   * Get SSE stream URLs for the current session
-   */
-  get streams() {
-    const sessionId = this.sessionId;
     return {
-      status: sessionId ? `${API_BASE}/session/${sessionId}/stream/status` : '',
-      build: sessionId ? `${API_BASE}/session/${sessionId}/stream/build` : '',
-      run: sessionId ? `${API_BASE}/session/${sessionId}/stream/run` : '',
-      review: `${API_BASE}/review/stream`,
-      reviewStatus: `${API_BASE}/review/stream/status`,
+      build: `${API_BASE}/session/${sid}/stream/build`,
+      status: `${API_BASE}/session/${sid}/stream/status`,
+      review: `${API_BASE}/review/${sid}/stream`,
+      reviewStatus: `${API_BASE}/review/${sid}/stream/status`,
     };
-  }
-}
-
-// Export singleton instance
-export const api = new ApiClient();
+  },
+};
