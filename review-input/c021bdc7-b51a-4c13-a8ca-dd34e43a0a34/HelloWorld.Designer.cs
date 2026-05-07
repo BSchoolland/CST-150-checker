@@ -28,36 +28,36 @@
         /// </summary>
         private void InitializeComponent()
         {
-            button1 = new Button();
-            myLabel = new Label();
+            ShowNameButton = new Button();
+            lblName = new Label();
             SuspendLayout();
             // 
-            // button1
+            // ShowNameButton
             // 
-            button1.Location = new Point(103, 48);
-            button1.Name = "button1";
-            button1.Size = new Size(172, 69);
-            button1.TabIndex = 0;
-            button1.Text = "button1";
-            button1.UseVisualStyleBackColor = true;
-            button1.Click += button1_Click;
+            ShowNameButton.Location = new Point(317, 149);
+            ShowNameButton.Name = "ShowNameButton";
+            ShowNameButton.Size = new Size(172, 69);
+            ShowNameButton.TabIndex = 0;
+            ShowNameButton.Text = "Click Me!";
+            ShowNameButton.UseVisualStyleBackColor = true;
+            ShowNameButton.Click += btnDisplayName_Click;
             // 
-            // myLabel
+            // lblName
             // 
-            myLabel.AutoSize = true;
-            myLabel.Location = new Point(515, 249);
-            myLabel.Name = "myLabel";
-            myLabel.Size = new Size(162, 20);
-            myLabel.TabIndex = 1;
-            myLabel.Text = "click the button please!";
+            lblName.AutoSize = true;
+            lblName.Location = new Point(317, 242);
+            lblName.Name = "lblName";
+            lblName.Size = new Size(162, 20);
+            lblName.TabIndex = 1;
+            lblName.Text = "click the button please!";
             // 
             // HelloWorld
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(800, 450);
-            Controls.Add(myLabel);
-            Controls.Add(button1);
+            Controls.Add(lblName);
+            Controls.Add(ShowNameButton);
             Name = "HelloWorld";
             Text = "Form1";
             ResumeLayout(false);
@@ -66,7 +66,7 @@
 
         #endregion
 
-        private Button button1;
-        private Label myLabel;
+        private Button ShowNameButton;
+        private Label lblName;
     }
 }

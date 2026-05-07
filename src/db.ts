@@ -232,6 +232,77 @@ export function seedDatabase(force = false) {
   );
 
   console.log("Database seeded successfully with CST-150 Activity 1 assignments");
+
+  // ===========================================
+  // CST-150 Activity 2
+  // ===========================================
+  const activity2Id = createAssignment(
+    "CST-150 Activity 2",
+    "Time Converter with Selection Structures"
+  );
+
+  // Part 1: Time Converter Application
+  createAssignmentPart(
+    activity2Id,
+    1,
+    "Time Converter (Seconds)",
+    "Windows Forms app that converts seconds to minutes, hours, or days using nested if statements and TryParse for input validation.",
+    [
+      "TextBox for seconds input",
+      "Button triggers conversion",
+      "Label displays result (minutes, hours, or days depending on input)",
+      "Use nested if statements for selection logic",
+      "Use TryParse for exception handling",
+      "Use constants for threshold values (60, 3600, 86400)",
+      "Follow naming conventions (prefer CamelCase, avoid abbreviations)",
+      "Code must be commented"
+    ],
+    `Review this C# WinForms project for the Time Converter Application.
+
+**Required Elements (not met is up to a 100% deduction):**
+- TextBox for seconds input
+- Button to trigger conversion
+- Label to display result
+- Proper nested if statement implementation
+
+**Conversion Logic (critical - must be correct):**
+- If seconds >= 86400: display days (seconds / 86400)
+- If seconds >= 3600: display hours (seconds / 3600)
+- If seconds >= 60: display minutes (seconds / 60)
+- Use nested if statements or if-else if chain for selection
+- Must use selection structures to control program flow
+
+**Constants (required):**
+- Must define constants for: 60 (seconds in minute), 3600 (seconds in hour), 86400 (seconds in day)
+- Example: const int SECONDS_PER_MINUTE = 60;
+
+**Exception Handling (required):**
+- Must use int.TryParse() or similar TryParse method
+- Handle non-integer input gracefully
+- Display appropriate error message for invalid input
+
+**Naming Conventions (max 10% deduction, mark as warnings not errors):**
+- Prefer CamelCase control names (e.g., SecondsTextBox, ConvertButton, ResultLabel)
+- Avoid abbreviations/Hungarian notation (e.g., "txt", "btn", "lbl")
+- Full descriptive names preferred over abbreviated prefixes
+- Variables: camelCase for local variables
+- Constants: UPPER_SNAKE_CASE or PascalCase acceptable
+- Note: Naming issues alone should not significantly impact the grade if functionality is correct
+
+**Code Quality (max 20% deduction):**
+- Comments explaining key logic, especially the selection structure
+- Clean event handlers
+- Proper form initialization
+
+**Scoring:**
+- Functionality is most important (70-80% of grade): correct conversion logic, proper TryParse usage
+- Constants must be used for threshold values (not magic numbers)
+- Good naming is preferred but only minor deduction for abbreviations (max 10%)
+- Comments and code quality matter but less than working functionality
+- Default names (button1, label1) are worse than abbreviated names (btn, lbl)`
+  );
+
+  console.log("Database seeded successfully with CST-150 Activity 2 assignments");
 }
 
 // Export the database for advanced operations

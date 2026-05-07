@@ -18,6 +18,8 @@ services:
       - HOST_PROJECT_DIR=${PWD}/projects
       - HOST_REVIEW_INPUT_DIR=${PWD}/review-input
       - HOST_REVIEW_OUTPUT_DIR=${PWD}/review-output
+      - REVIEW_INPUT_BASE=/app/review-input
+      - REVIEW_OUTPUT_BASE=/app/review-output
     # Security settings - main container is orchestrator only (no Wine)
     security_opt:
       - no-new-privileges:true

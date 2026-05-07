@@ -15,8 +15,8 @@ import type { ReviewResult } from "./types";
 // Configuration
 const REVIEW_CONTAINER_IMAGE = "cst150-review-runner:latest";
 const REVIEW_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const REVIEW_INPUT_BASE = "/app/review-input";
-const REVIEW_OUTPUT_BASE = process.env.REVIEW_OUTPUT_BASE || "/app/review-output";
+const REVIEW_INPUT_BASE = process.env.REVIEW_INPUT_BASE || "./review-input";
+const REVIEW_OUTPUT_BASE = process.env.REVIEW_OUTPUT_BASE || "./review-output";
 
 /**
  * Get session-specific review input path

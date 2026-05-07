@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { cors } from "hono/cors";
 import { existsSync } from "fs";
+import { mkdir, chmod } from "fs/promises";
 import { resolve } from "path";
 import { seedDatabase } from "./db";
 import { cleanupAllSessions } from "./container-runner";
@@ -20,7 +21,29 @@ import reviewRoutes from "./routes/review";
 import assignmentRoutes from "./routes/assignments";
 import debugRoutes from "./routes/debug";
 
-// Initialize database on startup
+// Ensure required directories exist with proper permissions
+async function ensureDirectories() {
+  const dirs = [
+    "./uploads",
+    "./projects",
+    "./review-input",
+    "./review-output",
+  ];
+  
+  for (const dir of dirs) {
+    try {
+      await mkdir(dir, { recursive: true, mode: 0o777 });
+      // Also chmod in case directory already existed with wrong permissions
+      await chmod(dir, 0o777);
+    } catch (err) {
+      // Ignore permission errors on chmod (might not own the directory)
+      // The mkdir with mode should work for new directories
+    }
+  }
+}
+
+// Initialize on startup
+await ensureDirectories();
 seedDatabase();
 
 // Graceful shutdown handler - clean up all sessions and project files

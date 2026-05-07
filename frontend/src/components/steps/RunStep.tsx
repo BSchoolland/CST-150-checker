@@ -24,7 +24,7 @@ export function RunStep() {
 
   const outputRef = useRef<HTMLPreElement>(null);
   const hasStartedRun = useRef(false);
-  const [hasInteracted, setHasInteracted] = useState(false);
+  const [, setHasInteracted] = useState(false);
 
   // Track if we should show VNC - show it once we're processing or completed
   const showVnc = stepStatuses.run === "processing" || stepStatuses.run === "completed" || stepStatuses.run === "warning";
@@ -107,10 +107,7 @@ export function RunStep() {
               <div className="flex items-center gap-2">
                 <Button 
                   onClick={handleDone} 
-                  className={cn(
-                    "gap-2",
-                    hasInteracted && "bg-emerald-600 hover:bg-emerald-700 text-white"
-                  )}
+                  className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
                 >
                   <Check className="w-4 h-4" />
                   Looks Good

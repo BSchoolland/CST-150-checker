@@ -16,6 +16,13 @@ function WorkflowPage() {
   const { currentStep, reset, goToPage, assignments, selectedAssignmentId } =
     useWorkflow();
 
+  // Redirect to assignment selection if no assignment is selected
+  useEffect(() => {
+    if (selectedAssignmentId === null) {
+      goToPage("select");
+    }
+  }, [selectedAssignmentId, goToPage]);
+
   // Get selected assignment for the header
   const selectedAssignment = assignments.find(
     (a) => a.id === selectedAssignmentId
